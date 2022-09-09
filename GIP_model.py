@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-import matplotlib.pyplot as plt
 
 class GILayer(nn.Module):
     """Represents a single layer of the network"""
