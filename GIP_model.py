@@ -16,11 +16,15 @@ class GILayer(nn.Module):
         self.b_mu_p = torch.zeros(input_dim, output_dim)
         self.b_logvar_p = torch.zeros(input_dim, output_dim)
 
-        # posteriors
+        # posteriors here?
 
         # pseudos
         self.pseud_mu = nn.Parameter(torch.zeros(num_induce, output_dim))
         self.pseud_logprec = nn.Parameter(torch.zeros(num_induce))
+
+    def q_prec(self, U_in):
+
+    def q_mu(self, U_in, q_prec):
 
 
 
