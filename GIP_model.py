@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 class GILayer(nn.Module):
     """Represents a single layer of the network"""
 
@@ -16,7 +17,7 @@ class GILayer(nn.Module):
         self.b_mu_p = torch.zeros(input_dim, output_dim)
         self.b_logvar_p = torch.zeros(input_dim, output_dim)
 
-        # posteriors here?
+        # do we need posterior init here?
 
         # pseudos
         self.pseud_mu = nn.Parameter(torch.zeros(num_induce, output_dim))
