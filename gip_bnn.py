@@ -3,7 +3,7 @@ from torch import nn
 
 
 class GILayer(nn.Module):
-    """Represents a single layer of the network"""
+    """Represents a single layer of a Bayesian neural network with global inducing points"""
 
     def __init__(self, input_dim, output_dim, num_induce):
         super(GILayer, self).__init__()
@@ -24,8 +24,13 @@ class GILayer(nn.Module):
         self.pseud_logprec = nn.Parameter(torch.zeros(num_induce))
 
     def q_prec(self, U_in):
+        pass
 
     def q_mu(self, U_in, q_prec):
+        pass
+        
+    def forward(self, F_in, U_in):
+        pass
 
 
 
