@@ -79,5 +79,36 @@ class GILayer(nn.Module):
 class GINetwork(nn.Module):
     """Represents the full network"""
     
-    def __init__(self, input_dim, output_dim, num_induce, nonlinearity=nn.ELU()):
+    def __init__(self, input_dim, hidden_dims, output_dim, num_induce, nonlinearity=nn.ELU()):
         super(GINetwork, self).__init__()
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.output_dim = output_dim
+        self.num_induce = num_induce
+        self.nonlinearity = nonlinearity
+        
+        self.network = nn.ModuleList()
+        for i in range(len(hidden_dims) + 1):
+            if i == 0:
+                self.network.append(GILayer(self.input_dim, 
+                                            self.hidden_dims[i], 
+                                            num_induce=self.num_induce, 
+                                            nonlinearity=self.nonlinearity))
+            elif i == len(hidden_dims):
+                self.network.append(GILayer(self.hidden_dims[i-1],
+                                            self.output_dim,
+                                            num_induce=self.num_induce,
+                                            nonlinearity=self.nonlinearity))
+            else:
+                self.network.append(GILayer(self.hidden_dims[i-1],
+                                            self.hidden_dims[i],
+                                            num_induce=self.num_induce,
+                                            nonlinearity=self.nonlinearity))
+                
+    def forward(self):
+        pass
+    
+    def elbo(self):
+        pass
+    
+    
