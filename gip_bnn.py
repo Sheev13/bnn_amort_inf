@@ -5,7 +5,7 @@ from torch import nn
 class GILayer(nn.Module):
     """Represents a single layer of a Bayesian neural network with global inducing points"""
 
-    def __init__(self, input_dim, output_dim, num_induce, nonlinearity=nn.ELU()):
+    def __init__(self, input_dim, output_dim, num_induce, nonlinearity):
         super(GILayer, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -63,17 +63,13 @@ class GILayer(nn.Module):
         w = q.sample()
         
         kl_contribution = torch.distributions.kl.kl_divergence(q, self.prior).sum()
-        log_p = self.prior.log_prob(w)
-        log_q = q.log_prob(w)
+        log_p = self.prior.log_prob(w).sum()
+        log_q = q.log_prob(w).sum()
         
         F_out = self.nonlinearity(F_in) @ w  # check that this is the right way around
         U_out = self.nonlinearity(U_in) @ w  # check that this is the right way around
         
         return F_out, U_out, kl_contribution, log_p, log_q
-        
-        
-        
-        
 
 
 
@@ -81,3 +77,6 @@ class GILayer(nn.Module):
 
 class GINetwork(nn.Module):
     """Represents the full network"""
+    
+    def __init__(self, input_dim, output_dim, num_induce, nonlinearity=nn.ELU()):
+        super(GINetwork, self).__init__()
