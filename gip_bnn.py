@@ -16,6 +16,7 @@ class GILayer(nn.Module):
         self.mu_p = torch.zeros(input_dim, output_dim)
         self.logvar_p = torch.zeros(input_dim, output_dim)
         #TODO: fix this/make it diagonal
+        #TODO: make this a multivariate normal with diagonal covariance so that kl works later on
         self.prior = torch.distributions.Normal(self.mu_p, (0.5 * self.logvar_p).exp())
 
         # pseudos
