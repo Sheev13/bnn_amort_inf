@@ -69,8 +69,9 @@ class GILayer(nn.Module):
         
         kl_contribution = torch.distributions.kl.kl_divergence(q, self.prior).sum()
         
-        F_out = self.nonlinearity(F_in) @ w  # check that this is the right way around
-        U_out = self.nonlinearity(U_in) @ w  # check that this is the right way around
+        #TODO: check that these are the right way around
+        F_out = self.nonlinearity(F_in) @ w 
+        U_out = self.nonlinearity(U_in) @ w
         
         return F_out, U_out, kl_contribution
 
@@ -125,7 +126,7 @@ class GINetwork(nn.Module):
             
         means = F
         
-        return means, self.noise, kl_total
+        return means, kl_total
             
     def ll(self, means, y):
         scales = self.noise * torch.ones_like(means)
@@ -133,7 +134,7 @@ class GINetwork(nn.Module):
         return l.log_prob(y).sum()
     
     def elbo(self, x, y):
-        means, noise, kl = self(x)
+        means, kl = self(x)
         ll = self.ll(means, y)
         elbo = ll - kl
-        return elbo, ll, kl, noise
+        return elbo, ll, kl, self.noise
