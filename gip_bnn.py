@@ -28,8 +28,10 @@ class GILayer(nn.Module):
         psi_U = self.nonlinearity(U_in)
         pseud_prec = torch.exp(self.pseud_logprec)
         
-        psi_U_T_lambda_psi_U = torch.einsum("mi, m, mj -> ij", psi_U, pseud_prec, psi_U)  # need to check this
-        q_prec = torch.diag(torch.exp(-self.logvar_p)[:, 0]) + psi_U_T_lambda_psi_U  # need to check this
+        #TODO: check this
+        psi_U_T_lambda_psi_U = torch.einsum("mi, m, mj -> ij", psi_U, pseud_prec, psi_U) 
+        #TODO: check this
+        q_prec = torch.diag(torch.exp(-self.logvar_p)[:, 0]) + psi_U_T_lambda_psi_U
         q_cov = torch.cholesky_inverse(q_prec)
         
         # q_prec_chol = torch.cholesky(q_prec)
@@ -45,16 +47,18 @@ class GILayer(nn.Module):
         psi_U = self.nonlinearity(U_in)
         pseud_prec = torch.exp(self.pseud_logprec)
         
-        # what should the shape of this be?
-        return q_cov @ psi_U.T @ pseud_prec @ self.pseud_mu  # perhaps use einsum instead?
+        #TODO: check shape of this, consider using torch.einsum instead
+        return q_cov @ psi_U.T @ pseud_prec @ self.pseud_mu
         
     def forward(self, F_in, U_in):
         # augment inputs with ones to absorb bias
         F_ones = torch.ones(shape=(F_in.shape[0], 1))
-        F_in = torch.cat([F_in, F_ones], dim=-1)  # double check dim here
+        #TODO: check this is right way around, and check dim
+        F_in = torch.cat([F_in, F_ones], dim=-1)  
         
         U_ones = torch.ones(shape=(U_in.shape[0], 1))
-        U_in = torch.cat([U_in, U_ones], dim=-1) # double check dim here
+        #TODO: check this is right way around, and check dim
+        U_in = torch.cat([U_in, U_ones], dim=-1)
         
         q_cov = self.get_q_cov(U_in)
         q_mu = self.get_q_mu(U_in, q_cov)
@@ -82,6 +86,7 @@ class GINetwork(nn.Module):
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
         self.output_dim = output_dim
+        #TODO: can we initialise the inducing points internally here instead?
         self.inducing_points = nn.Parameter(inducing_points)
         self.num_induce = inducing_points.shape[0]
         self.nonlinearity = nonlinearity
@@ -132,5 +137,3 @@ class GINetwork(nn.Module):
         ll = self.ll(means, y)
         elbo = ll - kl
         return elbo, ll, kl, noise
-    
-    
