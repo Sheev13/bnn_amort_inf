@@ -125,7 +125,7 @@ class GINetwork(nn.Module):
             kl_total += kl
             
         means = F
-        
+        #TODO: can we avoid returning kl_total here?
         return means, kl_total
             
     def ll(self, means, y):
