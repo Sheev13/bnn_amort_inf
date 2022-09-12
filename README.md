@@ -1,2 +1,2 @@
-# bnn_amort_inf
-add readme
+# Amortised Inference in Bayesian Neural Networks
+add some content
