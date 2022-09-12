@@ -15,8 +15,6 @@ class GILayer(nn.Module):
         # priors
         self.mu_p = torch.zeros(output_dim, input_dim)
         self.logvar_p = torch.zeros(output_dim, input_dim)
-        # TODO: fix this/make it diagonal
-        # TODO: make this a multivariate normal with diagonal covariance so that kl works later on
         self.prior = torch.distributions.Normal(self.mu_p, (0.5 * self.logvar_p).exp())
         self.full_prior = torch.distributions.MultivariateNormal(
             self.mu_p, (0.5 * self.logvar_p.diag_embed()).exp()
@@ -67,15 +65,6 @@ class GILayer(nn.Module):
         assert U.shape[2] == self.input_dim
         assert F.shape[2] == self.input_dim
 
-        # # augment inputs with ones to absorb bias
-        # F_ones = torch.ones(shape=(F.shape[0], 1))
-        # # TODO: check this is right way around, and check dim
-        # F = torch.cat([F, F_ones], dim=-1)
-
-        # U_ones = torch.ones(shape=(U.shape[0], 1))
-        # # TODO: check this is right way around, and check dim
-        # U = torch.cat([U, U_ones], dim=-1)
-
         q = self.q(U)
 
         # w is shape (num_samples, output_dim, input_dim).
@@ -85,11 +74,9 @@ class GILayer(nn.Module):
         w_ = w.unsqueeze(1)
 
         # kl_contribution is shape (num_samples).
-        kl_contribution = torch.distributions.kl.kl_divergence(q, self.full_prior).sum(
-            -1
-        )
+        kl_contribution = torch.distributions.kl.kl_divergence(
+            q, self.full_prior).sum(-1)
 
-        # TODO: check that these are the right way around
         # F and U are shape (num_samples, batch_size, output_dim).
         F = (w_ @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
         U = (w_ @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
@@ -157,7 +144,7 @@ class GINetwork(nn.Module):
 
         kl_total = torch.tensor(0)
         U = self.inducing_points
-        for i, layer in enumerate(self.network):
+        for layer in self.network:
             F_ones = torch.ones((F.shape[:-1], 1))
             F = torch.cat([F, F_ones], dim=-1)
             U_ones = torch.ones((U.shape[:-1], 1))
@@ -175,12 +162,23 @@ class GINetwork(nn.Module):
         return F, kl_total
 
     def ll(self, means, y):
+        # means have shape (num_samples, batch_size, output_dim)
+        
+        num_samples = means.shape[0]
+        y = y.unsqueeze(0).repeat(num_samples, 1, 1)
+        assert y.shape == means.shape
+        
         scales = self.noise * torch.ones_like(means)
         l = torch.distributions.normal.Normal(means, scales)
-        return l.log_prob(y).sum()
+        log_prob = l.log_prob(y)
+        return log_prob.sum(1).sum(1)
 
+
+    #TODO: sort out elbo ll kl shapes, mean and sum
     def elbo(self, x, y):
         means, kl = self(x)
         ll = self.ll(means, y)
         elbo = ll - kl
+        # elbo, ll, kl have shape (num_samples)
+        assert elbo.shape == ll.shape == kl.shape
         return elbo, ll, kl, self.noise
