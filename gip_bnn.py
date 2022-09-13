@@ -24,7 +24,7 @@ class GILayer(nn.Module):
         self.pseud_mu = nn.Parameter(torch.zeros(output_dim, num_induce))
         self.pseud_logprec = nn.Parameter(torch.zeros(output_dim, num_induce))
 
-    def q(self, U: torch.Tensor) -> torch.distribution.MultivariateNormal:
+    def get_q(self, U: torch.Tensor) -> torch.distributions.MultivariateNormal:
         # U is shape (num_samples, num_induces, input_dim).
         assert len(U.shape) == 3
         assert U.shape[1] == self.num_induce
@@ -58,17 +58,17 @@ class GILayer(nn.Module):
         q_mu = (q_cov @ UTLv).squeeze(-1)
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
-    def forward(self, F, U):
+    def forward(self, F, U, num_samples):
         assert len(U.shape) == 3
         assert len(F.shape) == 3
         assert U.shape[1] == self.num_induce
         assert U.shape[2] == self.input_dim
         assert F.shape[2] == self.input_dim
 
-        q = self.q(U)
+        q = self.get_q(U)
 
         # w is shape (num_samples, output_dim, input_dim).
-        w = q.rsample()
+        w = q.rsample((num_samples,))
 
         # w_ is shape (num_samples, 1, output_dim, input_dim).
         w_ = w.unsqueeze(1)
@@ -150,7 +150,7 @@ class GINetwork(nn.Module):
             U_ones = torch.ones((U.shape[:-1], 1))
             U = torch.cat([U, U_ones], dim=-1)
 
-            F, U, kl = layer(F, U)
+            F, U, kl = layer(F, U, num_samples)
             kl_total += kl
 
         assert len(kl_total.shape) == 1
@@ -161,24 +161,27 @@ class GINetwork(nn.Module):
 
         return F, kl_total
 
-    def ll(self, means, y):
-        # means have shape (num_samples, batch_size, output_dim)
+    def ll(self, F, y):
+        # F has shape (num_samples, batch_size, output_dim)
         
-        num_samples = means.shape[0]
+        num_samples = F.shape[0]
         y = y.unsqueeze(0).repeat(num_samples, 1, 1)
-        assert y.shape == means.shape
+        assert y.shape == F.shape
         
-        scales = self.noise * torch.ones_like(means)
-        l = torch.distributions.normal.Normal(means, scales)
+        scales = self.noise * torch.ones_like(F)
+        l = torch.distributions.normal.Normal(F, scales)
         log_prob = l.log_prob(y)
         return log_prob.sum(1).sum(1)
 
 
     #TODO: sort out elbo ll kl shapes, mean and sum
     def elbo(self, x, y):
-        means, kl = self(x)
-        ll = self.ll(means, y)
-        elbo = ll - kl
-        # elbo, ll, kl have shape (num_samples)
-        assert elbo.shape == ll.shape == kl.shape
-        return elbo, ll, kl, self.noise
+        num_samples = x.shape[0]
+        F, kl = self(x)
+        ll = self.ll(F, y)
+        assert len(ll.shape) == 1
+        assert ll.shape[0] == num_samples
+        assert len(kl.shape) == 1
+        assert kl.shape[0] == num_samples
+        elbo = ll.mean() - kl.sum()
+        return elbo, ll.mean(), kl.sum(), self.noise
