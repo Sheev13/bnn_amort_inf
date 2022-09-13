@@ -14,11 +14,8 @@ class GILayer(nn.Module):
 
         # priors
         self.mu_p = torch.zeros(output_dim, input_dim)
-        self.logvar_p = torch.zeros(output_dim, input_dim)
-        self.prior = torch.distributions.Normal(self.mu_p, (0.5 * self.logvar_p).exp())
-        self.full_prior = torch.distributions.MultivariateNormal(
-            self.mu_p, (0.5 * self.logvar_p.diag_embed()).exp()
-        )
+        self.cov_p = torch.ones(output_dim, input_dim).diag_embed()
+        self.full_prior = torch.distributions.MultivariateNormal(self.mu_p, self.cov_p)
 
         # pseudos
         self.pseud_mu = nn.Parameter(torch.zeros(output_dim, num_induce))
@@ -30,6 +27,7 @@ class GILayer(nn.Module):
         assert U.shape[1] == self.num_induce
         assert U.shape[2] == self.input_dim
 
+        num_samples = U.shape[0]
         U = self.nonlinearity(U)
 
         # U_ is shape (num_samples, 1, num_induce, input_dim).
@@ -50,8 +48,10 @@ class GILayer(nn.Module):
         # UTLv is shape (num_samples, output_dim, input_dim, 1)
         UTLv = UTL @ pseud_mu_
 
-        # prior_prec_ is shape (1, 1, input_dim, input_dim).
-        prior_prec_ = (-self.logvar_p).exp().diag_embed().unsqueeze(0)
+        # prior_prec_ is shape (1, 1, input_dim, input_dim). MCA
+        # prior_prec_ should be shape (num_samples, output_dim, input_dim, input_dim)? TNR
+        prior_prec_ = ((self.cov_p.diagonal(dim1=-2, dim2=-1))**(-1)).diag_embed(
+            ).unsqueeze(0).repeat(num_samples, 1, 1, 1)
 
         q_prec = prior_prec_ + UTLU
         q_cov = torch.cholesky_inverse(q_prec)
@@ -98,7 +98,7 @@ class GINetwork(nn.Module):
         self.inducing_points = nn.Parameter(inducing_points)
         self.num_induce = inducing_points.shape[0]
         self.nonlinearity = nonlinearity
-        self.log_noise = nn.Parameter(torch.tensor(-1))
+        self.log_noise = nn.Parameter(torch.tensor(-2.0))
 
         self.network = nn.ModuleList()
         for i in range(len(hidden_dims) + 1):
@@ -142,12 +142,14 @@ class GINetwork(nn.Module):
         F = F.unsqueeze(0).repeat(num_samples, 1, 1)
         U = self.inducing_points.unsqueeze(0).repeat(num_samples, 1, 1)
 
-        kl_total = torch.tensor(0)
-        U = self.inducing_points
+        kl_total = torch.tensor(0.0).unsqueeze(0)
+        #TODO: fix this!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for layer in self.network:
-            F_ones = torch.ones((F.shape[:-1], 1))
+            print(F.shape)
+            F_ones = torch.ones((F.shape[0], F.shape[1], 1))
+            print(F_ones.shape)
             F = torch.cat([F, F_ones], dim=-1)
-            U_ones = torch.ones((U.shape[:-1], 1))
+            U_ones = torch.ones((U.shape[0], U.shape[1], 1))
             U = torch.cat([U, U_ones], dim=-1)
 
             F, U, kl = layer(F, U, num_samples)
