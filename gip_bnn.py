@@ -30,8 +30,8 @@ class GILayer(nn.Module):
         num_samples = U.shape[0]
         U = self.nonlinearity(U)
 
-        # U_ is shape (num_samples, 1, num_induce, input_dim).
-        U_ = U.unsqueeze(1)
+        # U_ is shape (num_samples, output_dim, num_induce, input_dim).
+        U_ = U.unsqueeze(1).repeat(1, self.output_dim, 1, 1)
 
         # pseud_logprec_ is shape (1, output_dim, num_induce, num_induce).
         pseud_logprec_ = self.pseud_logprec.diag_embed().unsqueeze(0)
@@ -39,8 +39,8 @@ class GILayer(nn.Module):
         # pseud_mu_ is shape (1, output_dim, num_induce, 1).
         pseud_mu_ = self.pseud_mu.unsqueeze(0).unsqueeze(-1)
 
-        # UTL is shape (num_samples, output_dim, input_dim, num_induces)
-        UTL = U.transpose(-1, -2) @ pseud_logprec_.exp()
+        # UTL is shape (num_samples, output_dim, input_dim, num_induce)
+        UTL = U_.transpose(-1, -2) @ pseud_logprec_.exp()
 
         # UTLU is shape (num_samples, output_dim, input_dim, input_dim)
         UTLU = UTL @ U_
@@ -67,19 +67,21 @@ class GILayer(nn.Module):
 
         q = self.get_q(U)
 
-        # w is shape (num_samples, output_dim, input_dim).
+        # w is shape (num_samples, 1, output_dim, input_dim).
+        #TODO: fix this!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         w = q.rsample((num_samples,))
-
-        # w_ is shape (num_samples, 1, output_dim, input_dim).
-        w_ = w.unsqueeze(1)
+        print(w[0,:,0,0])
 
         # kl_contribution is shape (num_samples).
         kl_contribution = torch.distributions.kl.kl_divergence(
             q, self.full_prior).sum(-1)
+        
+        print(w.shape)
+        print(self.nonlinearity(F).unsqueeze(-1).shape)
 
         # F and U are shape (num_samples, batch_size, output_dim).
-        F = (w_ @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
-        U = (w_ @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
+        F = (w @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
+        U = (w @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
 
         return F, U, kl_contribution
 
@@ -143,14 +145,11 @@ class GINetwork(nn.Module):
         U = self.inducing_points.unsqueeze(0).repeat(num_samples, 1, 1)
 
         kl_total = torch.tensor(0.0).unsqueeze(0)
-        #TODO: fix this!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         for layer in self.network:
-            print(F.shape)
-            F_ones = torch.ones((F.shape[0], F.shape[1], 1))
-            print(F_ones.shape)
-            F = torch.cat([F, F_ones], dim=-1)
-            U_ones = torch.ones((U.shape[0], U.shape[1], 1))
-            U = torch.cat([U, U_ones], dim=-1)
+            F_ones = torch.ones(F.shape[:-1]).unsqueeze(-1)
+            F = torch.cat((F, F_ones), dim=-1)
+            U_ones = torch.ones(U.shape[:-1]).unsqueeze(-1)
+            U = torch.cat((U, U_ones), dim=-1)
 
             F, U, kl = layer(F, U, num_samples)
             kl_total += kl
@@ -177,13 +176,15 @@ class GINetwork(nn.Module):
 
 
     #TODO: sort out elbo ll kl shapes, mean and sum
-    def elbo(self, x, y):
-        num_samples = x.shape[0]
-        F, kl = self(x)
+    def elbo_loss(self, x, y, num_samples=1):
+        F, kl = self(x, num_samples=num_samples)
         ll = self.ll(F, y)
         assert len(ll.shape) == 1
         assert ll.shape[0] == num_samples
         assert len(kl.shape) == 1
         assert kl.shape[0] == num_samples
-        elbo = ll.mean() - kl.sum()
-        return elbo, ll.mean(), kl.sum(), self.noise
+        ll = ll.mean()
+        print(kl)
+        kl = kl.mean()
+        elbo = kl - ll
+        return elbo, ll, kl, self.noise
