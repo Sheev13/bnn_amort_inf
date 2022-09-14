@@ -72,23 +72,16 @@ class GILayer(nn.Module):
         q = self.get_q(U)
 
         # w should be shape (num_samples, 1, output_dim, input_dim).
-        # atm it is shape (num_samples, num_samples, output_dim, input_dim)
-        # TODO: fix this################################################################################################
-        w = q.rsample()
-        w_ = w.unsqueeze(1)
-        # print(w[0,:,0,0])
+        w = q.rsample().unsqueeze(1)
 
         # kl_contribution is shape (num_samples).
         kl_contribution = torch.distributions.kl.kl_divergence(q, self.full_prior).sum(
             -1
         )
 
-        print(w.shape)
-        print(self.nonlinearity(F).unsqueeze(-1).shape)
-
         # F and U are shape (num_samples, batch_size, output_dim).
-        F = (w_ @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
-        U = (w_ @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
+        F = (w @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
+        U = (w @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
 
         return F, U, kl_contribution
 
