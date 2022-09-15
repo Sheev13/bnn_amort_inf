@@ -97,7 +97,7 @@ class GINetwork(nn.Module):
         output_dim,
         inducing_points,
         nonlinearity=nn.ELU(),
-        prior_var=2.0
+        prior_var=1.0
     ):
         super(GINetwork, self).__init__()
         self.input_dim = input_dim
