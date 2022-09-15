@@ -5,16 +5,18 @@ from torch import nn
 class GILayer(nn.Module):
     """Represents a single layer of a Bayesian neural network with global inducing points"""
 
-    def __init__(self, input_dim, output_dim, num_induce, nonlinearity):
+    def __init__(self, input_dim, output_dim, num_induce, nonlinearity, prior_var):
         super(GILayer, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.num_induce = num_induce
         self.nonlinearity = nonlinearity
+        self.prior_var = prior_var
 
         # priors
         self.mu_p = torch.zeros(output_dim, input_dim)
-        self.cov_p = torch.ones(output_dim, input_dim).diag_embed()
+        self.cov_p = (self.prior_var / input_dim**0.5) * torch.ones(
+            output_dim, input_dim).diag_embed()
         self.full_prior = torch.distributions.MultivariateNormal(self.mu_p, self.cov_p)
 
         # pseudos
@@ -89,16 +91,22 @@ class GINetwork(nn.Module):
     """Represents the full Global Inducing Point BNN"""
 
     def __init__(
-        self, input_dim, hidden_dims, output_dim, inducing_points, nonlinearity=nn.ELU()
+        self,
+        input_dim,
+        hidden_dims,
+        output_dim,
+        inducing_points,
+        nonlinearity=nn.ELU(),
+        prior_var=1.0
     ):
         super(GINetwork, self).__init__()
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
         self.output_dim = output_dim
-        # TODO: can we initialise the inducing points internally here instead?
         self.inducing_points = nn.Parameter(inducing_points)
         self.num_induce = inducing_points.shape[0]
         self.nonlinearity = nonlinearity
+        self.prior_var = prior_var
         self.log_noise = nn.Parameter(torch.tensor(-1.0))
         # self.log_noise = torch.tensor(-5.0)
 
@@ -111,6 +119,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
+                        prior_var=self.prior_var
                     )
                 )
             elif i == len(hidden_dims):
@@ -120,6 +129,7 @@ class GINetwork(nn.Module):
                         self.output_dim,
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
+                        prior_var=self.prior_var
                     )
                 )
             else:
@@ -129,6 +139,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
+                        prior_var=self.prior_var
                     )
                 )
 
@@ -185,5 +196,5 @@ class GINetwork(nn.Module):
         assert kl.shape[0] == num_samples
         ll = ll.mean()
         kl = kl.mean()
-        elbo = kl - ll
-        return elbo, ll, kl, self.noise
+        elbo = ll - kl
+        return -elbo, ll, kl, self.noise
