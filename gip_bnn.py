@@ -48,8 +48,7 @@ class GILayer(nn.Module):
         # UTLv is shape (num_samples, output_dim, input_dim, 1)
         UTLv = UTL @ pseud_mu_
 
-        # prior_prec_ is shape (1, 1, input_dim, input_dim). MCA
-        # prior_prec_ should be shape (num_samples, output_dim, input_dim, input_dim)? TNR
+        # prior_prec_ is shape (num_samples, output_dim, input_dim, input_dim)
         prior_prec_ = (
             ((self.cov_p.diagonal(dim1=-2, dim2=-1)) ** (-1))
             .diag_embed()
@@ -100,7 +99,8 @@ class GINetwork(nn.Module):
         self.inducing_points = nn.Parameter(inducing_points)
         self.num_induce = inducing_points.shape[0]
         self.nonlinearity = nonlinearity
-        self.log_noise = nn.Parameter(torch.tensor(-2.0))
+        self.log_noise = nn.Parameter(torch.tensor(-1.0))
+        # self.log_noise = torch.tensor(-5.0)
 
         self.network = nn.ModuleList()
         for i in range(len(hidden_dims) + 1):
@@ -167,8 +167,6 @@ class GINetwork(nn.Module):
         return F, kl_total
 
     def ll(self, F, y):
-        # F has shape (num_samples, batch_size, output_dim)
-
         num_samples = F.shape[0]
         y = y.unsqueeze(0).repeat(num_samples, 1, 1)
         assert y.shape == F.shape
@@ -178,7 +176,6 @@ class GINetwork(nn.Module):
         log_prob = l.log_prob(y)
         return log_prob.sum(1).sum(1)
 
-    # TODO: sort out elbo ll kl shapes, mean and sum
     def elbo_loss(self, x, y, num_samples=1):
         F, kl = self(x, num_samples=num_samples)
         ll = self.ll(F, y)
