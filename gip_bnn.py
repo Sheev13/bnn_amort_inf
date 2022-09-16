@@ -5,7 +5,15 @@ from torch import nn
 class GILayer(nn.Module):
     """Represents a single layer of a Bayesian neural network with global inducing points"""
 
-    def __init__(self, input_dim, output_dim, num_induce, nonlinearity, prior_var):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        num_induce,
+        nonlinearity,
+        prior_var,
+        prec_init=1e2,
+    ):
         super(GILayer, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -15,13 +23,16 @@ class GILayer(nn.Module):
 
         # priors
         self.mu_p = torch.zeros(output_dim, input_dim)
-        self.cov_p = (self.prior_var / input_dim**0.5) * torch.ones(
-            output_dim, input_dim).diag_embed()
-        self.full_prior = torch.distributions.MultivariateNormal(self.mu_p, self.cov_p)
+        self.var_p = self.prior_var * torch.ones(output_dim, input_dim)
+        self.full_prior = torch.distributions.MultivariateNormal(
+            self.mu_p, self.var_p.diag_embed()
+        )
 
         # pseudos
-        self.pseud_mu = nn.Parameter(torch.zeros(output_dim, num_induce))
-        self.pseud_logprec = nn.Parameter(torch.zeros(output_dim, num_induce))
+        self.pseud_mu = nn.Parameter(torch.randn(output_dim, num_induce))
+        self.pseud_logprec = nn.Parameter(
+            (prec_init * torch.ones(output_dim, num_induce)).log()
+        )
 
     def get_q(self, U: torch.Tensor) -> torch.distributions.MultivariateNormal:
         # U is shape (num_samples, num_induces, input_dim).
@@ -29,20 +40,19 @@ class GILayer(nn.Module):
         assert U.shape[1] == self.num_induce
         assert U.shape[2] == self.input_dim
 
-        num_samples = U.shape[0]
         U = self.nonlinearity(U)
 
-        # U_ is shape (num_samples, output_dim, num_induce, input_dim).
-        U_ = U.unsqueeze(1).repeat(1, self.output_dim, 1, 1)
+        # U_ is shape (num_samples, 1, num_induce, input_dim).
+        U_ = U.unsqueeze(1)
 
         # pseud_logprec_ is shape (1, output_dim, num_induce, num_induce).
-        pseud_logprec_ = self.pseud_logprec.diag_embed().unsqueeze(0)
+        pseud_prec_ = self.pseud_logprec.exp().diag_embed().unsqueeze(0)
 
         # pseud_mu_ is shape (1, output_dim, num_induce, 1).
         pseud_mu_ = self.pseud_mu.unsqueeze(0).unsqueeze(-1)
 
         # UTL is shape (num_samples, output_dim, input_dim, num_induce)
-        UTL = U_.transpose(-1, -2) @ pseud_logprec_.exp()
+        UTL = U_.transpose(-1, -2) @ pseud_prec_
 
         # UTLU is shape (num_samples, output_dim, input_dim, input_dim)
         UTLU = UTL @ U_
@@ -50,16 +60,20 @@ class GILayer(nn.Module):
         # UTLv is shape (num_samples, output_dim, input_dim, 1)
         UTLv = UTL @ pseud_mu_
 
-        # prior_prec_ is shape (num_samples, output_dim, input_dim, input_dim)
-        prior_prec_ = (
-            ((self.cov_p.diagonal(dim1=-2, dim2=-1)) ** (-1))
-            .diag_embed()
-            .unsqueeze(0)
-            .repeat(num_samples, 1, 1, 1)
-        )
+        # prior_prec_ is shape (1, output_dim, input_dim, input_dim)
+        prior_prec_ = (self.var_p ** (-1)).diag_embed().unsqueeze(0)
 
         q_prec = prior_prec_ + UTLU
-        q_cov = torch.cholesky_inverse(q_prec)
+
+        try:
+            q_prec_chol = torch.linalg.cholesky(q_prec)
+        except:
+            import pdb
+
+            pdb.set_trace()
+            print()
+
+        q_cov = torch.cholesky_inverse(q_prec_chol)
         q_mu = (q_cov @ UTLv).squeeze(-1)
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
@@ -97,7 +111,8 @@ class GINetwork(nn.Module):
         output_dim,
         inducing_points,
         nonlinearity=nn.ELU(),
-        prior_var=1.0
+        prior_var=1.0,
+        init_noise=1e-1,
     ):
         super(GINetwork, self).__init__()
         self.input_dim = input_dim
@@ -107,7 +122,9 @@ class GINetwork(nn.Module):
         self.num_induce = inducing_points.shape[0]
         self.nonlinearity = nonlinearity
         self.prior_var = prior_var
-        self.log_noise = nn.Parameter(torch.tensor(-1.0))
+        self.log_noise = nn.Parameter(
+            torch.tensor(init_noise).log(), requires_grad=False
+        )
         # self.log_noise = torch.tensor(-5.0)
 
         self.network = nn.ModuleList()
@@ -119,7 +136,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
-                        prior_var=self.prior_var
+                        prior_var=self.prior_var,
                     )
                 )
             elif i == len(hidden_dims):
@@ -129,7 +146,7 @@ class GINetwork(nn.Module):
                         self.output_dim,
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
-                        prior_var=self.prior_var
+                        prior_var=self.prior_var,
                     )
                 )
             else:
@@ -139,7 +156,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
                         nonlinearity=self.nonlinearity,
-                        prior_var=self.prior_var
+                        prior_var=self.prior_var,
                     )
                 )
 
@@ -163,7 +180,7 @@ class GINetwork(nn.Module):
             U = torch.cat((U, U_ones), dim=-1)
 
             F, U, kl = layer(F, U)
-            
+
             if kl_total is None:
                 kl_total = kl
             else:
