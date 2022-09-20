@@ -10,7 +10,7 @@ class GILayer(nn.Module):
         input_dim,
         output_dim,
         num_induce,
-        nonlinearity,
+        activation,
         prior_var,
         prec_init=1e2,
     ):
@@ -18,7 +18,7 @@ class GILayer(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.num_induce = num_induce
-        self.nonlinearity = nonlinearity
+        self.activation = activation
         self.prior_var = prior_var
 
         # priors
@@ -40,19 +40,17 @@ class GILayer(nn.Module):
         assert U.shape[1] == self.num_induce
         assert U.shape[2] == self.input_dim
 
-        U = self.nonlinearity(U)
-
         # U_ is shape (num_samples, 1, num_induce, input_dim).
         U_ = U.unsqueeze(1)
 
         # pseud_logprec_ is shape (1, output_dim, num_induce, num_induce).
-        pseud_prec_ = self.pseud_logprec.exp().diag_embed().unsqueeze(0)
+        pseud_prec_ = self.pseud_logprec.exp().unsqueeze(0).unsqueeze(-2)
 
         # pseud_mu_ is shape (1, output_dim, num_induce, 1).
         pseud_mu_ = self.pseud_mu.unsqueeze(0).unsqueeze(-1)
 
         # UTL is shape (num_samples, output_dim, input_dim, num_induce)
-        UTL = U_.transpose(-1, -2) @ pseud_prec_
+        UTL = U_.transpose(-1, -2) * pseud_prec_
 
         # UTLU is shape (num_samples, output_dim, input_dim, input_dim)
         UTLU = UTL @ U_
@@ -64,17 +62,8 @@ class GILayer(nn.Module):
         prior_prec_ = (self.var_p ** (-1)).diag_embed().unsqueeze(0)
 
         q_prec = prior_prec_ + UTLU
-
-        try:
-            q_prec_chol = torch.linalg.cholesky(q_prec)
-        except:
-            import pdb
-
-            pdb.set_trace()
-            print()
-
+        q_prec_chol = torch.linalg.cholesky(q_prec)
         q_cov = torch.cholesky_inverse(q_prec_chol)
-        
         q_mu = (q_cov @ UTLv).squeeze(-1)
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
@@ -87,8 +76,8 @@ class GILayer(nn.Module):
 
         q = self.get_q(U)
 
-        # w should be shape (num_samples, 1, output_dim, input_dim).
-        w = q.rsample().unsqueeze(1)
+        # w should be shape (num_samples, output_dim, input_dim).
+        w = q.rsample()
 
         # kl_contribution is shape (num_samples).
         kl_contribution = torch.distributions.kl.kl_divergence(q, self.full_prior).sum(
@@ -96,8 +85,8 @@ class GILayer(nn.Module):
         )
 
         # F and U are shape (num_samples, batch_size, output_dim).
-        F = (w @ self.nonlinearity(F).unsqueeze(-1)).squeeze(-1)
-        U = (w @ self.nonlinearity(U).unsqueeze(-1)).squeeze(-1)
+        F = self.activation((F @ w.transpose(-1, -2)))
+        U = self.activation((U @ w.transpose(-1, -2)))
 
         return F, U, kl_contribution
 
@@ -124,7 +113,7 @@ class GINetwork(nn.Module):
         self.nonlinearity = nonlinearity
         self.prior_var = prior_var
         self.log_noise = nn.Parameter(
-            torch.tensor(init_noise).log(), requires_grad=True
+            torch.tensor(init_noise).log(), requires_grad=False
         )
 
         self.network = nn.ModuleList()
@@ -135,7 +124,7 @@ class GINetwork(nn.Module):
                         self.input_dim + 1,
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
-                        nonlinearity=self.nonlinearity,
+                        activation=self.nonlinearity,
                         prior_var=self.prior_var,
                     )
                 )
@@ -145,7 +134,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i - 1] + 1,
                         self.output_dim,
                         num_induce=self.num_induce,
-                        nonlinearity=self.nonlinearity,
+                        activation=nn.Identity(),
                         prior_var=self.prior_var,
                     )
                 )
@@ -155,7 +144,7 @@ class GINetwork(nn.Module):
                         self.hidden_dims[i - 1] + 1,
                         self.hidden_dims[i],
                         num_induce=self.num_induce,
-                        nonlinearity=self.nonlinearity,
+                        activation=self.nonlinearity,
                         prior_var=self.prior_var,
                     )
                 )
