@@ -205,3 +205,9 @@ class GINetwork(nn.Module):
         kl = kl.mean()
         elbo = ll - kl
         return -elbo, ll, kl, self.noise
+    
+    def get_pseudos(self):
+        locs = self.inducing_points.detach().squeeze()
+        final_layer = self.network[-1]
+        outputs = final_layer.pseud_mu.detach().squeeze()
+        return locs, outputs
