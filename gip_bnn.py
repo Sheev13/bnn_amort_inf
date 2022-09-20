@@ -74,6 +74,7 @@ class GILayer(nn.Module):
             print()
 
         q_cov = torch.cholesky_inverse(q_prec_chol)
+        
         q_mu = (q_cov @ UTLv).squeeze(-1)
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
@@ -123,9 +124,8 @@ class GINetwork(nn.Module):
         self.nonlinearity = nonlinearity
         self.prior_var = prior_var
         self.log_noise = nn.Parameter(
-            torch.tensor(init_noise).log(), requires_grad=False
+            torch.tensor(init_noise).log(), requires_grad=True
         )
-        # self.log_noise = torch.tensor(-5.0)
 
         self.network = nn.ModuleList()
         for i in range(len(hidden_dims) + 1):
