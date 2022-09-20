@@ -114,6 +114,7 @@ class GINetwork(nn.Module):
         nonlinearity=nn.ELU(),
         prior_var=1.0,
         init_noise=1e-1,
+        trainable_noise=True,
     ):
         super(GINetwork, self).__init__()
         self.input_dim = input_dim
@@ -124,7 +125,7 @@ class GINetwork(nn.Module):
         self.nonlinearity = nonlinearity
         self.prior_var = prior_var
         self.log_noise = nn.Parameter(
-            torch.tensor(init_noise).log(), requires_grad=True
+            torch.tensor(init_noise).log(), requires_grad=trainable_noise
         )
 
         self.network = nn.ModuleList()
