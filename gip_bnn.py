@@ -43,7 +43,7 @@ class GILayer(nn.Module):
         # U_ is shape (num_samples, 1, num_induce, input_dim).
         U_ = U.unsqueeze(1)
 
-        # pseud_logprec_ is shape (1, output_dim, num_induce, num_induce).
+        # pseud_prec_ is shape (1, output_dim, 1, num_induce).
         pseud_prec_ = self.pseud_logprec.exp().unsqueeze(0).unsqueeze(-2)
 
         # pseud_mu_ is shape (1, output_dim, num_induce, 1).
