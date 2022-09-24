@@ -6,13 +6,12 @@ class InferenceNetwork(nn.Module):
     
     def __init__(
         self,
-        input_dim,
-        hidden_dims,
         output_dim,
-        activation,
+        hidden_dims=[100, 100],
+        activation=nn.ReLU(),
     ):
         super(InferenceNetwork, self).__init__()
-        self.input_dim = input_dim
+        self.input_dim = 2
         self.hidden_dims = hidden_dims
         self.output_dim = output_dim
         self.activation = activation
@@ -75,12 +74,7 @@ class AmortLayer(nn.Module):
         )
         
         # auxiliary network
-        self.aux_network = InferenceNetwork(
-            self.input_dim,
-            [100, 100],
-            self.output_dim * 2,  # pseudo mean and variance for each output
-            self.activation,
-        )
+        self.aux_network = InferenceNetwork(self.output_dim * 2)
 
     def get_q(self, U: torch.Tensor) -> torch.distributions.MultivariateNormal:
         # U is shape (num_samples, num_induces, input_dim).
