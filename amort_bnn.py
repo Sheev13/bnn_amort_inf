@@ -257,13 +257,3 @@ class AmortNetwork(nn.Module):
     #     final_layer = self.network[-1]
     #     outputs = final_layer.pseud_mu.detach().squeeze()
     #     return locs, outputs
-    
-    
-class AmortNetworkWrapper(nn.Module):
-    """Wrapper for the Amortised Inference Network"""
-    
-    def __init__(self, amortnetwork, amortlayers, inferencelayers):
-        super(AmortNetworkWrapper, self).__init__()
-        self.amortnetwork = amortnetwork
-        self.amortlayers = amortlayers
-        self.inferencelayers = inferencelayers
