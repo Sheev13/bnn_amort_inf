@@ -165,39 +165,36 @@ class AmortNetwork(nn.Module):
             torch.tensor(init_noise).log(), requires_grad=trainable_noise
         )
 
-        #TODO: clean this for loop up as Boris advised
         self.network = nn.ModuleList()
-        for i in range(len(hidden_dims) + 1):
-            if i == 0:
-                self.network.append(
-                    AmortLayer(
-                        self.input_dim + 1,
-                        self.hidden_dims[i],
-                        num_induce=self.num_induce,
-                        activation=self.nonlinearity,
-                        prior_var=self.prior_var,
-                    )
+        
+        self.network.append(
+            AmortLayer(
+                self.input_dim + 1,
+                self.hidden_dims[0],
+                num_induce=self.num_induce,
+                activation=self.nonlinearity,
+                prior_var=self.prior_var,
                 )
-            elif i == len(hidden_dims):
-                self.network.append(
-                    AmortLayer(
-                        self.hidden_dims[i - 1] + 1,
-                        self.output_dim,
-                        num_induce=self.num_induce,
-                        activation=nn.Identity(),
-                        prior_var=self.prior_var,
-                    )
+            )
+        for i in range(1, len(hidden_dims)):
+            self.network.append(
+                AmortLayer(
+                    self.hidden_dims[i - 1] + 1,
+                    self.hidden_dims[i],
+                    num_induce=self.num_induce,
+                    activation=self.nonlinearity,
+                    prior_var=self.prior_var,
                 )
-            else:
-                self.network.append(
-                    AmortLayer(
-                        self.hidden_dims[i - 1] + 1,
-                        self.hidden_dims[i],
-                        num_induce=self.num_induce,
-                        activation=self.nonlinearity,
-                        prior_var=self.prior_var,
-                    )
                 )
+        self.network.append(
+            AmortLayer(
+                self.hidden_dims[-1] + 1,
+                self.output_dim,
+                num_induce=self.num_induce,
+                activation=nn.Identity(),
+                prior_var=self.prior_var,
+            )
+        )
 
     @property
     def noise(self):
