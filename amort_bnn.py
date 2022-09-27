@@ -77,27 +77,27 @@ class AmortLayer(nn.Module):
             dim=2,
         )
         pseud_prec = 1 / ((2 * pseud_logstd).exp())
-        return pseud_mu, pseud_prec
+        return pseud_mu.T, pseud_prec.T
     
     def get_q(self, U: torch.Tensor, x, y) -> torch.distributions.MultivariateNormal:
         # U is shape (num_samples, N, input_dim).
         assert len(U.shape) == 3
-        # assert U.shape[1] == self.num_induce
+        # assert U.shape[1] == self.batch_size
         assert U.shape[2] == self.input_dim
 
-        # U_ is shape (num_samples, 1, num_induce, input_dim).
+        # U_ is shape (num_samples, 1, batch_size, input_dim).
         U_ = U.unsqueeze(1)
 
         # amortisation
         pseud_mu, pseud_prec = self.infer_pseudos(x, y)
         
-        # pseud_prec_ is shape (1, output_dim, 1, num_induce).
+        # pseud_prec_ is shape (1, output_dim, 1, batch_size).
         pseud_prec_ = pseud_prec.unsqueeze(0).unsqueeze(-2)
 
-        # pseud_mu_ is shape (1, output_dim, num_induce, 1).
+        # pseud_mu_ is shape (1, output_dim, batch_size, 1).
         pseud_mu_ = pseud_mu.unsqueeze(0).unsqueeze(-1)
 
-        # UTL is shape (num_samples, output_dim, input_dim, num_induce)
+        # UTL is shape (num_samples, output_dim, input_dim, batch_size)
         UTL = U_.transpose(-1, -2) * pseud_prec_
 
         # UTLU is shape (num_samples, output_dim, input_dim, input_dim)
@@ -148,7 +148,7 @@ class AmortNetwork(nn.Module):
         output_dim,
         x,
         y,
-        nonlinearity=nn.ELU(),
+        nonlinearity=nn.ReLU(),
         prior_var=1.0,
         init_noise=1e-1,
         trainable_noise=True,
@@ -171,7 +171,6 @@ class AmortNetwork(nn.Module):
             AmortLayer(
                 self.input_dim + 1,
                 self.hidden_dims[0],
-                num_induce=self.num_induce,
                 activation=self.nonlinearity,
                 prior_var=self.prior_var,
                 )
@@ -181,7 +180,6 @@ class AmortNetwork(nn.Module):
                 AmortLayer(
                     self.hidden_dims[i - 1] + 1,
                     self.hidden_dims[i],
-                    num_induce=self.num_induce,
                     activation=self.nonlinearity,
                     prior_var=self.prior_var,
                 )
@@ -190,7 +188,6 @@ class AmortNetwork(nn.Module):
             AmortLayer(
                 self.hidden_dims[-1] + 1,
                 self.output_dim,
-                num_induce=self.num_induce,
                 activation=nn.Identity(),
                 prior_var=self.prior_var,
             )
