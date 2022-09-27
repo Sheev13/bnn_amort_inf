@@ -74,7 +74,7 @@ class AmortLayer(nn.Module):
         pseud_mu, pseud_logstd = torch.split(
             self.inference_network(z),
             self.output_dim,
-            dim=2,
+            dim=1,
         )
         pseud_prec = 1 / ((2 * pseud_logstd).exp())
         return pseud_mu.T, pseud_prec.T
