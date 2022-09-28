@@ -7,8 +7,8 @@ class InferenceNetwork(nn.Module):
     def __init__(
         self,
         output_dim,
-        hidden_dims=[100, 100],
-        activation=nn.ReLU(),
+        hidden_dims,
+        activation,
     ):
         super(InferenceNetwork, self).__init__()
         self.input_dim = 2
@@ -49,6 +49,8 @@ class AmortLayer(nn.Module):
         output_dim,
         activation,
         prior_var,
+        inf_net_dims,
+        inf_net_act,
         infer_last_pseudos=True,
     ):
         super(AmortLayer, self).__init__()
@@ -56,6 +58,8 @@ class AmortLayer(nn.Module):
         self.output_dim = output_dim
         self.activation = activation
         self.prior_var = prior_var
+        self.inf_net_dims = inf_net_dims
+        self.inf_net_act = inf_net_act
         self.infer_last_pseudos = infer_last_pseudos
 
         # priors
@@ -67,7 +71,10 @@ class AmortLayer(nn.Module):
         
         # amortising/auxiliary inference network
         if self.infer_last_pseudos:
-            self.inference_network = InferenceNetwork(self.output_dim * 2)
+            self.inference_network = InferenceNetwork(self.output_dim * 2,
+                                                      hidden_dims=self.inf_net_dims,
+                                                      activation=self.inf_net_act,
+                                                      )
         
     def infer_pseudos(self, x, y):
         # z is shape (batch_size, 2)
@@ -162,6 +169,8 @@ class AmortNetwork(nn.Module):
         prior_var=1.0,
         init_noise=1e-1,
         trainable_noise=True,
+        inf_net_dims=[100, 100],
+        inf_net_act=nn.ReLU(),
         infer_last_pseudos=True,
     ):
         super(AmortNetwork, self).__init__()
@@ -175,6 +184,8 @@ class AmortNetwork(nn.Module):
         self.log_noise = nn.Parameter(
             torch.tensor(init_noise).log(), requires_grad=trainable_noise
         )
+        self.inf_net_dims = inf_net_dims
+        self.inf_net_act = inf_net_act
         self.infer_last_pseudos = infer_last_pseudos
 
         self.network = nn.ModuleList()
@@ -183,25 +194,31 @@ class AmortNetwork(nn.Module):
             AmortLayer(
                 self.input_dim + 1,
                 self.hidden_dims[0],
-                activation=self.nonlinearity,
-                prior_var=self.prior_var,
-                )
+                self.nonlinearity,
+                self.prior_var,
+                self.inf_net_dims,
+                self.inf_net_act,
             )
+        )
         for i in range(1, len(hidden_dims)):
             self.network.append(
                 AmortLayer(
                     self.hidden_dims[i - 1] + 1,
                     self.hidden_dims[i],
-                    activation=self.nonlinearity,
-                    prior_var=self.prior_var,
+                    self.nonlinearity,
+                    self.prior_var,
+                    self.inf_net_dims,
+                    self.inf_net_act,
                 )
-                )
+            )
         self.network.append(
             AmortLayer(
                 self.hidden_dims[-1] + 1,
                 self.output_dim,
-                activation=nn.Identity(),
-                prior_var=self.prior_var,
+                nn.Identity(),
+                self.prior_var,
+                self.inf_net_dims,
+                self.inf_net_act,
                 infer_last_pseudos=self.infer_last_pseudos,
             )
         )
