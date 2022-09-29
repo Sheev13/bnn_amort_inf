@@ -1,9 +1,10 @@
 import torch
 from torch import nn
 
+
 class InferenceNetwork(nn.Module):
     """Represents a network that implements amortisation within a layer of the wider network."""
-    
+
     def __init__(
         self,
         output_dim,
@@ -15,12 +16,12 @@ class InferenceNetwork(nn.Module):
         self.hidden_dims = hidden_dims
         self.output_dim = output_dim
         self.activation = activation
-        
+
         self.network = nn.ModuleList()
-        
+
         self.network.append(nn.Linear(self.input_dim, self.hidden_dims[0]))
         self.network.append(self.activation)
-        
+
         for i in range(1, len(hidden_dims)):
             self.network.append(
                 nn.Linear(
@@ -29,15 +30,14 @@ class InferenceNetwork(nn.Module):
                 )
             )
             self.network.append(self.activation)
-            
+
         self.network.append(nn.Linear(self.hidden_dims[-1], self.output_dim))
         self.network.append(nn.Identity())
-                
+
     def forward(self, z):
         for layer in self.network:
             z = layer(z)
         return z
-
 
 
 class AmortLayer(nn.Module):
@@ -68,14 +68,15 @@ class AmortLayer(nn.Module):
         self.full_prior = torch.distributions.MultivariateNormal(
             self.mu_p, self.var_p.diag_embed()
         )
-        
+
         # amortising/auxiliary inference network
         if self.infer_last_pseudos:
-            self.inference_network = InferenceNetwork(self.output_dim * 2,
-                                                      hidden_dims=self.inf_net_dims,
-                                                      activation=self.inf_net_act,
-                                                      )
-        
+            self.inference_network = InferenceNetwork(
+                self.output_dim * 2,
+                hidden_dims=self.inf_net_dims,
+                activation=self.inf_net_act,
+            )
+
     def infer_pseudos(self, x, y):
         # z is shape (batch_size, 2)
         z = torch.cat((x, y), dim=1)
@@ -88,8 +89,10 @@ class AmortLayer(nn.Module):
         )
         pseud_prec = 1 / ((2 * pseud_logstd).exp())
         return pseud_mu.T, pseud_prec.T
-    
-    def get_q(self, U: torch.Tensor, x, y, noise=None) -> torch.distributions.MultivariateNormal:
+
+    def get_q(
+        self, U: torch.Tensor, x, y, noise=None
+    ) -> torch.distributions.MultivariateNormal:
         # U is shape (num_samples, N, input_dim).
         assert len(U.shape) == 3
         # assert U.shape[1] == self.batch_size
@@ -104,7 +107,7 @@ class AmortLayer(nn.Module):
         else:
             pseud_mu = y.T
             pseud_prec = (1 / (noise**2)) * torch.ones_like(pseud_mu)
-        
+
         # pseud_prec_ is shape (1, output_dim, 1, batch_size).
         pseud_prec_ = pseud_prec.unsqueeze(0).unsqueeze(-2)
 
@@ -137,7 +140,7 @@ class AmortLayer(nn.Module):
 
         if self.infer_last_pseudos:
             assert noise is None
-            
+
         q = self.get_q(U, x, y, noise)
 
         # w should be shape (num_samples, output_dim, input_dim).
@@ -189,7 +192,7 @@ class AmortNetwork(nn.Module):
         self.infer_last_pseudos = infer_last_pseudos
 
         self.network = nn.ModuleList()
-        
+
         self.network.append(
             AmortLayer(
                 self.input_dim + 1,
@@ -246,7 +249,7 @@ class AmortNetwork(nn.Module):
                 noise = None
             else:
                 noise = self.noise
-                
+
             F, U, kl = layer(F, U, self.x, self.y, noise)
 
             if kl_total is None:
@@ -283,7 +286,7 @@ class AmortNetwork(nn.Module):
         kl = kl.mean()
         elbo = ll - kl
         return -elbo, ll, kl, self.noise
-    
+
     def get_pseud_outs(self):
         locs = self.x.squeeze()
         if self.infer_last_pseudos:
@@ -291,4 +294,4 @@ class AmortNetwork(nn.Module):
             outputs = final_layer.infer_pseudos(self.x, self.y)[0].detach().squeeze()
         else:
             outputs = self.y.squeeze()
-        return locs, outputs 
+        return locs, outputs
