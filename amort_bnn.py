@@ -292,10 +292,11 @@ class AmortNetwork(nn.Module):
         elbo = ll - kl
         return -elbo, ll, kl, self.noise
 
-    # def get_pseud_outs(self):
-    #     if self.infer_last_pseudos:
-    #         final_layer = self.network[-1]
-    #         outputs = final_layer.infer_pseudos(self.x, self.y)[0].detach().squeeze()
-    #     else:
-    #         outputs = self.y.squeeze()
-    #     return locs, outputs
+    def get_pseud_outs(self, x, y):
+        locs = x.squeeze()
+        if self.infer_last_pseudos:
+            final_layer = self.network[-1]
+            outputs = final_layer.infer_pseudos(x, y)[0].detach().squeeze()
+        else:
+            outputs = y.squeeze()
+        return locs, outputs
