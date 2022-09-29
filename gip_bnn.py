@@ -12,6 +12,7 @@ class GILayer(nn.Module):
         num_induce,
         activation,
         prior_var,
+        mu_init=None,
         prec_init=1e2,
     ):
         super(GILayer, self).__init__()
@@ -29,7 +30,12 @@ class GILayer(nn.Module):
         )
 
         # pseudos
-        self.pseud_mu = nn.Parameter(torch.randn(output_dim, num_induce))
+        if mu_init is None:
+            self.pseud_mu = nn.Parameter(torch.randn(output_dim, num_induce))
+        else:
+            assert mu_init.shape == torch.Size((output_dim, num_induce))
+            self.pseud_mu = nn.Parameter(mu_init.clone())
+
         self.pseud_logprec = nn.Parameter(
             (prec_init * torch.ones(output_dim, num_induce)).log()
         )
@@ -104,6 +110,7 @@ class GINetwork(nn.Module):
         prior_var=1.0,
         init_noise=1e-1,
         trainable_noise=True,
+        last_layer_pseud_obs=None,
     ):
         super(GINetwork, self).__init__()
         self.input_dim = input_dim
@@ -137,6 +144,7 @@ class GINetwork(nn.Module):
                         num_induce=self.num_induce,
                         activation=nn.Identity(),
                         prior_var=self.prior_var,
+                        mu_init=last_layer_pseud_obs,
                     )
                 )
             else:
@@ -205,7 +213,7 @@ class GINetwork(nn.Module):
         kl = kl.mean()
         elbo = ll - kl
         return -elbo, ll, kl, self.noise
-    
+
     def get_pseudos(self):
         locs = self.inducing_points.detach().squeeze()
         final_layer = self.network[-1]
