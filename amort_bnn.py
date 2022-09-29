@@ -171,7 +171,7 @@ class AmortNetwork(nn.Module):
         trainable_noise=True,
         inf_net_dims=[100, 100],
         inf_net_act=nn.ReLU(),
-        infer_last_pseudos=True,
+        infer_last_pseudos=False,
     ):
         super(AmortNetwork, self).__init__()
         self.input_dim = input_dim
