@@ -1,5 +1,6 @@
 import gpytorch
 import torch
+import numpy as np
 
 class GPModel(gpytorch.models.ExactGP):
     """Represents a Gaussian process model"""
@@ -28,16 +29,33 @@ class GPDataGenerator():
         
     def generate_task(
         self,
-        min_context=5,
+        min_context=3,
         max_context=50,
-        min_target=5,
+        min_target=3,
         max_target=50,
         range=[-2.0, 2.0],
     ):
-        task = {'x': [],
-                'y': [],
-                'x_context': [],
-                'y_context': [],
-                'x_target': [],
-                'y_target': []}
-
+        task = {'x': torch.linspace(range[0], range[1], 200),
+                'y': torch.Tensor(),
+                'x_context': torch.Tensor(),
+                'y_context': torch.Tensor(),
+                'x_target': torch.Tensor(),
+                'y_target': torch.Tensor()}
+        
+        self.gp.eval()
+        with gpytorch.settings.prior_mode(True):
+            task['y'] = self.gp(task['x']).sample()
+        
+        num_context = np.random.randint(min_context, max_context+1)
+        num_target = np.random.randint(min_target, max_target+1)
+        num_points = num_context + num_target
+        points_id = torch.randperm(200)[:num_points]
+        context_id = points_id[:num_context]
+        target_id = points_id[num_context:]
+        
+        task['x_context'] = task['x'][context_id]
+        task['y_context'] = task['y'][context_id]
+        task['x_target'] = task['x'][target_id]
+        task['y_target'] = task['y'][target_id]
+        
+        return task
