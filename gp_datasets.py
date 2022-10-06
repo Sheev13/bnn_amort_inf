@@ -29,6 +29,7 @@ class GPDataGenerator():
         
     def generate_task(
         self,
+        noise=0.08,
         min_context=3,
         max_context=50,
         min_target=3,
@@ -53,9 +54,9 @@ class GPDataGenerator():
         context_id = points_id[:num_context]
         target_id = points_id[num_context:]
         
-        task['x_context'] = task['x'][context_id]
-        task['y_context'] = task['y'][context_id]
-        task['x_target'] = task['x'][target_id]
-        task['y_target'] = task['y'][target_id]
+        task['x_context'] = task['x'][context_id] + noise*torch.randn(num_context)
+        task['y_context'] = task['y'][context_id] + noise*torch.randn(num_context)
+        task['x_target'] = task['x'][target_id] + noise*torch.randn(num_target)
+        task['y_target'] = task['y'][target_id] + noise*torch.randn(num_target)
         
         return task
