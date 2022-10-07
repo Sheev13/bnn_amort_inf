@@ -29,7 +29,7 @@ class GPDataGenerator():
         
     def generate_task(
         self,
-        noise=0.07,
+        noise=0.05,
         min_context=3,
         max_context=50,
         min_target=3,
