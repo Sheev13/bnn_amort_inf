@@ -29,12 +29,12 @@ class GPDataGenerator():
         
     def generate_task(
         self,
-        noise=0.08,
+        noise=0.07,
         min_context=3,
         max_context=50,
         min_target=3,
         max_target=50,
-        range=[-2.0, 2.0],
+        range=[-3.0, 3.0],
     ):
         task = {'x': torch.linspace(range[0], range[1], 200),
                 'y': torch.Tensor(),
