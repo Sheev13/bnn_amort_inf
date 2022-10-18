@@ -18,8 +18,12 @@ def train_metamodel(
     es: bool = True,
     min_es_iters: int = 1_000,
     ref_es_iters: int = 300,
+    smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
 ) -> Dict[str, List[Any]]:
+
+    assert ref_es_iters < min_es_iters
+    assert smooth_es_iters < min_es_iters
 
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True)
@@ -63,8 +67,11 @@ def train_metamodel(
 
         # Early stopping.
         if iter_idx > min_es_iters:
-            curr_loss = sum(tracker["loss"][-50:]) / 50
-            ref_loss = sum(tracker["loss"][-ref_es_iters - 50 : -ref_es_iters]) / 50
+            curr_loss = sum(tracker["loss"][-smooth_es_iters:]) / smooth_es_iters
+            ref_loss = (
+                sum(tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters])
+                / smooth_es_iters
+            )
             if es and abs(curr_loss - ref_loss) < abs(es_thresh * ref_loss):
                 break
 
