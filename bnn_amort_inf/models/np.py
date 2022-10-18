@@ -99,7 +99,8 @@ class CNP(nn.Module):
         encoder_hidden_dims: List[int],
         decoder_hidden_dims: List[int],
         nonlinearity: nn.Module = nn.ReLU(),
-        activation: nn.Module = NormalActivation(),
+        noise: float = 1e-2,
+        train_noise: bool = True,
     ):
         super().__init__()
 
@@ -107,13 +108,28 @@ class CNP(nn.Module):
             x_dim, y_dim, encoder_hidden_dims, embedded_dim, nonlinearity
         )
         self.decoder = Decoder(
-            x_dim, y_dim, decoder_hidden_dims, embedded_dim, nonlinearity, activation
+            x_dim,
+            y_dim,
+            decoder_hidden_dims,
+            embedded_dim,
+            nonlinearity,
+            activation=nn.Identity(),
         )
+
+        self.log_noise = nn.Parameter(
+            torch.tensor(noise).log(), requires_grad=train_noise
+        )
+
+    @property
+    def noise(self):
+        return self.log_noise.exp()
 
     def forward(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor
     ) -> torch.distributions.Distribution:
-        return self.decoder(self.encoder(x_c, y_c), x_t)
+        return torch.distributions.Normal(
+            self.decoder(self.encoder(x_c, y_c), x_t), self.noise
+        )
 
     def loss(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor, y_t: torch.Tensor
@@ -121,5 +137,5 @@ class CNP(nn.Module):
         dist = self.forward(x_c, y_c, x_t)
         ll = dist.log_prob(y_t).sum()
 
-        metrics = {"ll": ll.item()}
+        metrics = {"ll": ll.item(), "noise": self.noise.detach().item()}
         return (-ll / x_t.shape[0]), metrics
