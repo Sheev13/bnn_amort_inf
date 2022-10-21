@@ -54,8 +54,8 @@ class Decoder(nn.Module):
         y_dim: int,
         hidden_dims: List[int],
         embedded_dim: int,
+        activation: nn.Module,
         nonlinearity: nn.Module = nn.ReLU(),
-        activation: nn.Module = NormalActivation(),
     ):
         super().__init__()
         self.x_dim = x_dim
@@ -101,6 +101,7 @@ class CNP(nn.Module):
         nonlinearity: nn.Module = nn.ReLU(),
         noise: float = 1e-2,
         train_noise: bool = True,
+        decoder_activation: nn.Module = NormalActivation(),
     ):
         super().__init__()
 
@@ -112,8 +113,8 @@ class CNP(nn.Module):
             y_dim,
             decoder_hidden_dims,
             embedded_dim,
+            decoder_activation,
             nonlinearity,
-            activation=nn.Identity(),
         )
 
         self.log_noise = nn.Parameter(
@@ -127,9 +128,11 @@ class CNP(nn.Module):
     def forward(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor
     ) -> torch.distributions.Distribution:
-        return torch.distributions.Normal(
-            self.decoder(self.encoder(x_c, y_c), x_t), self.noise
-        )
+        decode = self.decoder(self.encoder(x_c, y_c), x_t)
+        if isinstance(decode, torch.distributions.Distribution):
+            return decode
+        else:
+            return torch.distributions.Normal(decode, self.noise)
 
     def loss(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor, y_t: torch.Tensor
