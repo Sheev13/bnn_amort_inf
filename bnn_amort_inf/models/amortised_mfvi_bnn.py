@@ -2,8 +2,9 @@ from typing import Dict, List, Optional
 
 import torch
 from torch import nn
-from ..utils.networks import MLP
+
 from ..utils.activations import NormalActivation
+from ..utils.networks import MLP
 
 
 class AmortisedMFVIBNNLayer(nn.Module):
