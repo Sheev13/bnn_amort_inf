@@ -19,8 +19,11 @@ class AmortisedGIBNN(BaseGIBNN):
         in_nonlinearity: nn.Module = nn.ReLU(),
         noise: float = 1.0,
         train_noise: bool = False,
+        amortised=True,
     ):
-        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
+        super().__init__(
+            x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise, amortised
+        )
 
         dims = [x_dim] + hidden_dims + [y_dim]
         if pws is None:

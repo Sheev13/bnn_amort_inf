@@ -16,6 +16,7 @@ class BaseGIBNN(nn.Module):
         nonlinearity: nn.Module = nn.ReLU(),
         noise: float = 1.0,
         train_noise: bool = False,
+        amortised=False,
     ):
         super().__init__()
 
@@ -28,6 +29,7 @@ class BaseGIBNN(nn.Module):
         self.log_noise = nn.Parameter(
             torch.tensor(noise).log(), requires_grad=train_noise
         )
+        self.amortised = amortised
 
     @property
     def noise(self):
@@ -47,7 +49,10 @@ class BaseGIBNN(nn.Module):
     def elbo(
         self, x: torch.Tensor, y: torch.Tensor, num_samples: int = 1
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        F, kl = self(x, y, num_samples=num_samples)[:2]
+        if self.amortised:
+            F, kl = self(x, y, num_samples=num_samples)[:2]
+        else:
+            F, kl = self(x, num_samples=num_samples)[:2]
 
         exp_ll = self.exp_ll(F, y).mean(0)
         kl = kl.mean(0)
@@ -85,8 +90,11 @@ class GIBNN(BaseGIBNN):
         pws: Optional[List[torch.distributions.Normal]] = None,
         noise: float = 1.0,
         train_noise: bool = False,
+        amortised=False,
     ):
-        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
+        super().__init__(
+            x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise, amortised
+        )
 
         self.num_inducing = num_inducing
 
@@ -99,7 +107,7 @@ class GIBNN(BaseGIBNN):
         if inducing_points is None:
             self.inducing_points = nn.Parameter(torch.randn(num_inducing, x_dim))
         else:
-            assert self.inducing_points.shape == torch.Size((num_inducing, x_dim))
+            assert inducing_points.shape == torch.Size((num_inducing, x_dim))
             self.inducing_points = nn.Parameter(inducing_points)
 
         # ModuleList for storing GIBNNLayers.
