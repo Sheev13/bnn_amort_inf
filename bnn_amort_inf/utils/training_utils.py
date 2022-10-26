@@ -14,6 +14,7 @@ def train_metamodel(
     min_context: int = 3,
     max_context: int = 50,
     max_iters: int = 10_000,
+    batch_size: int = 1,
     lr: float = 1e-2,
     es: bool = True,
     min_es_iters: int = 1_000,
@@ -33,37 +34,42 @@ def train_metamodel(
     iter_tqdm = tqdm(range(max_iters), desc="iters")
     for iter_idx in iter_tqdm:
 
-        try:
-            (x, y) = next(dataset_iterator)
-        except StopIteration:
-            dataset_iterator = iter(dataloader)
-            (x, y) = next(dataset_iterator)
-
-        # TODO: allow for batching of datasets.
-        x = x.squeeze(0)
-        y = y.squeeze(0)
-
         opt.zero_grad()
+        batch_loss = torch.tensor(0.0)
+        batch_metrics: Dict = defaultdict(float)
+        for _ in range(batch_size):
 
-        if neural_process:
-            # Randomly sample context and target points.
-            (x_c, y_c), (x_t, y_t) = context_target_split(
-                x, y, min_context, max_context
-            )
-            loss, metrics = model.loss(x_c, y_c, x_t, y_t)
-        else:
-            loss, metrics = model.loss(x, y)
+            try:
+                (x, y) = next(dataset_iterator)
+            except StopIteration:
+                dataset_iterator = iter(dataloader)
+                (x, y) = next(dataset_iterator)
 
-        loss.backward()
+            x, y = x.squeeze(0), y.squeeze(0)
+
+            if neural_process:
+                # Randomly sample context and target points.
+                (x_c, y_c), (x_t, y_t) = context_target_split(
+                    x, y, min_context, max_context
+                )
+                loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+            else:
+                loss, metrics = model.loss(x, y)
+
+            batch_loss += loss / batch_size
+            for key, value in metrics.items():
+                batch_metrics[key] += value / batch_size
+
+        batch_loss.backward()
         opt.step()
 
-        if "loss" not in metrics:
-            tracker["loss"].append(loss.item())
+        if "loss" not in batch_metrics:
+            tracker["loss"].append(batch_loss.item())
 
-        for key, value in metrics.items():
+        for key, value in batch_metrics.items():
             tracker[key].append(value)
 
-        iter_tqdm.set_postfix(metrics)
+        iter_tqdm.set_postfix(batch_metrics)
 
         # Early stopping.
         if iter_idx > min_es_iters:

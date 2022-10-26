@@ -21,8 +21,8 @@ def context_target_split(
     assert min_context < max_context
 
     # Randomly sample context points.
+    max_context = min(max_context, len(x) - 1)
     n_context = torch.randint(low=min_context, high=max_context, size=(1,))
-    assert n_context < x.shape[0], "More context points than data!"
 
     rand_idx_perm = torch.randperm(x.shape[0])
     idx_context = rand_idx_perm[:n_context]
