@@ -90,8 +90,8 @@ class GIBNN(BaseGIBNN):
         pws: Optional[List[torch.distributions.Normal]] = None,
         noise: float = 1.0,
         train_noise: bool = False,
-        amortised=False,
     ):
+        amortised = False
         super().__init__(
             x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise, amortised
         )
