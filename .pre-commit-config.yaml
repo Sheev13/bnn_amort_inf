@@ -46,7 +46,7 @@ repos:
         files: \.ipynb$
         stages: [commit]
         language: system
-        entry: jupyter nbconvert.exe --ClearOutputPreprocessor.enabled=True --inplace
+        entry: jupyter nbconvert --ClearOutputPreprocessor.enabled=True --inplace
 -   repo: https://github.com/asottile/blacken-docs
     rev: v1.12.1
     hooks:

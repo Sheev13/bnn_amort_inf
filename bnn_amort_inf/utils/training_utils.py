@@ -14,6 +14,7 @@ def train_metamodel(
     min_context: int = 3,
     max_context: int = 50,
     max_iters: int = 10_000,
+    num_samples: int = 1,
     batch_size: int = 1,
     lr: float = 1e-2,
     es: bool = True,
@@ -54,7 +55,7 @@ def train_metamodel(
                 )
                 loss, metrics = model.loss(x_c, y_c, x_t, y_t)
             else:
-                loss, metrics = model.loss(x, y)
+                loss, metrics = model.loss(x, y, num_samples)
 
             batch_loss += loss / batch_size
             for key, value in metrics.items():
@@ -70,6 +71,66 @@ def train_metamodel(
             tracker[key].append(value)
 
         iter_tqdm.set_postfix(batch_metrics)
+
+        # Early stopping.
+        if iter_idx > min_es_iters:
+            curr_loss = sum(tracker["loss"][-smooth_es_iters:]) / smooth_es_iters
+            ref_loss = (
+                sum(tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters])
+                / smooth_es_iters
+            )
+            if es and ref_loss - curr_loss < abs(es_thresh * ref_loss):
+                break
+
+    return tracker
+
+
+def train_model(
+    model,
+    dataset: torch.utils.data.Dataset,
+    max_iters: int = 10_000,
+    batch_size: int = 1,
+    lr: float = 1e-2,
+    es: bool = True,
+    min_es_iters: int = 1_000,
+    ref_es_iters: int = 300,
+    smooth_es_iters: int = 50,
+    es_thresh: float = 1e-2,
+) -> Dict[str, List[Any]]:
+
+    assert ref_es_iters < min_es_iters
+    assert smooth_es_iters < min_es_iters
+
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    dataloader = torch.utils.data.DataLoader(
+        dataset, shuffle=True, batch_size=batch_size
+    )
+    dataset_iterator = iter(dataloader)
+
+    tracker = defaultdict(list)
+    iter_tqdm = tqdm(range(max_iters), desc="iters")
+    for iter_idx in iter_tqdm:
+
+        opt.zero_grad()
+
+        try:
+            (x, y) = next(dataset_iterator)
+        except StopIteration:
+            dataset_iterator = iter(dataloader)
+            (x, y) = next(dataset_iterator)
+
+        loss, metrics = model.loss(x, y)
+
+        loss.backward()
+        opt.step()
+
+        if "loss" not in metrics:
+            tracker["loss"].append(loss.item())
+
+        for key, value in metrics.items():
+            tracker[key].append(value)
+
+        iter_tqdm.set_postfix(metrics)
 
         # Early stopping.
         if iter_idx > min_es_iters:

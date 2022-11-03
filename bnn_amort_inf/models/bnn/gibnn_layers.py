@@ -1,39 +1,16 @@
-from typing import Dict, List, Optional
+from abc import ABC
+from typing import List, Optional
 
 import torch
 from torch import nn
 
 from ...utils.activations import NormalActivation
 from ...utils.networks import MLP
+from .bnn_layers import BaseBNNLayer
 
 
-class GIBNNLayer(nn.Module):
+class GIBNNLayer(BaseBNNLayer, ABC):
     """Represents a single layer of a GI-BNN."""
-
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        pw: Optional[torch.distributions.Normal] = None,
-    ):
-        super().__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-
-        if pw is None:
-            self.pw = torch.distributions.Normal(
-                torch.zeros(output_dim, input_dim), torch.ones(output_dim, input_dim)
-            )
-        else:
-            assert isinstance(pw, torch.distributions.Normal)
-            assert pw.loc.shape == torch.Size((output_dim, input_dim))
-            self.pw = pw
-
-        self._cache: Dict = {}
-
-    @property
-    def cache(self):
-        return self._cache
 
     def pseudo_likelihood(self, *args, **kwargs) -> torch.distributions.Normal:
         raise NotImplementedError
@@ -72,27 +49,19 @@ class GIBNNLayer(nn.Module):
         prior_prec_ = (self.pw.scale ** (-2)).diag_embed().unsqueeze(0)
 
         q_prec = prior_prec_ + UTLU
+
         q_prec_chol = torch.linalg.cholesky(q_prec)
         q_cov = torch.cholesky_inverse(q_prec_chol)
         q_mu = (q_cov @ UTLv).squeeze(-1)
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
-    def forward(self, U: torch.Tensor, *args, **kwargs):
-        """Computes q(w), samples q(w) and stores KL divergence in self.cache."""
+    def forward(
+        self, U: torch.Tensor, *args, **kwargs
+    ):  # pylint: disable=arguments-differ
+        """Computes q(w) and stores in cache."""
         pseudo_likelihood = self.pseudo_likelihood(*args, **kwargs)
         qw = self.qw(U, pseudo_likelihood)
-
-        # (num_samples, output_dim, input_dim).
-        w = qw.rsample()
-
-        # (num_samples).
-        mv_pw = torch.distributions.MultivariateNormal(
-            self.pw.loc, self.pw.scale.pow(2).diag_embed()
-        )
-        kl = torch.distributions.kl.kl_divergence(qw, mv_pw).sum(-1)
-
-        self._cache["w"] = w
-        self._cache["kl"] = kl
+        self._cache["qw"] = qw
 
 
 class FreeFormGIBNNLayer(GIBNNLayer):

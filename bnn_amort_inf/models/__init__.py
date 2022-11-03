@@ -1,1 +1,1 @@
-from . import gibnn, gp, np
+from . import bnn, gp, np
