@@ -143,3 +143,7 @@ def train_model(
                 break
 
     return tracker
+
+
+def train_gp():
+    pass
