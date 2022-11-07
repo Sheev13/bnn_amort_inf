@@ -1,6 +1,7 @@
 from collections import defaultdict
 from typing import Any, Dict, List
 
+import gpytorch
 import torch
 from tqdm.auto import tqdm
 
@@ -145,5 +146,61 @@ def train_model(
     return tracker
 
 
-def train_gp():
-    pass
+def train_gp(
+    gp_model,
+    likelihood,
+    dataset: torch.utils.data.Dataset,
+    dataset_size: int,
+    max_iters: int = 10_000,
+    lr: float = 1e-2,
+    es: bool = True,
+    min_es_iters: int = 100,
+    ref_es_iters: int = 75,
+    smooth_es_iters: int = 50,
+    es_thresh: float = 1e-2,
+) -> Dict[str, List[Any]]:
+
+    assert ref_es_iters < min_es_iters
+    assert smooth_es_iters < min_es_iters
+
+    gp_model.train()
+    likelihood.train()
+
+    opt = torch.optim.Adam(gp_model.parameters(), lr=lr)
+    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, gp_model)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=dataset_size)
+    dataset_iterator = iter(dataloader)
+
+    tracker = defaultdict(list)
+    iter_tqdm = tqdm(range(max_iters), desc="iters")
+    for iter_idx in iter_tqdm:
+
+        opt.zero_grad()
+
+        try:
+            (x, y) = next(dataset_iterator)
+        except StopIteration:
+            dataset_iterator = iter(dataloader)
+            (x, y) = next(dataset_iterator)
+
+        output = gp_model(x.squeeze())
+        loss = -mll(output, y.squeeze()).sum()
+
+        loss.backward()
+        opt.step()
+
+        tracker["loss"].append(loss.item())
+
+        iter_tqdm.set_postfix(tracker)
+
+        # Early stopping.
+        if iter_idx > min_es_iters:
+            curr_loss = sum(tracker["loss"][-smooth_es_iters:]) / smooth_es_iters
+            ref_loss = (
+                sum(tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters])
+                / smooth_es_iters
+            )
+            if es and abs(curr_loss - ref_loss) < abs(es_thresh * ref_loss):
+                break
+
+    return tracker
