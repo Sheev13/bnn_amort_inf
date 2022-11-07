@@ -1,28 +1,10 @@
+import sys
 from typing import Optional, Tuple
 
-import gpytorch
 import torch
 
-
-class GPModel(gpytorch.models.ExactGP):
-    """Represents a Gaussian process model"""
-
-    def __init__(
-        self,
-        x: Optional[torch.Tensor] = None,
-        y: Optional[torch.Tensor] = None,
-        likelihood: gpytorch.likelihoods.Likelihood = gpytorch.likelihoods.GaussianLikelihood(),
-    ):
-        super().__init__(x, y, likelihood)
-        self.mean_module = gpytorch.means.ZeroMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
-    def forward(  # pylint: disable=arguments-differ
-        self, x: torch.Tensor
-    ) -> gpytorch.distributions.MultivariateNormal:
-        return gpytorch.distributions.MultivariateNormal(
-            self.mean_module(x), self.covar_module(x)
-        )
+sys.path.append("../")
+from bnn_amort_inf.models.gp import GPModel
 
 
 def gp_dataset_generator(
@@ -31,11 +13,14 @@ def gp_dataset_generator(
     min_n: int = 51,
     max_n: int = 200,
     noise: float = 0.01,
+    kernel: str = "se",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     assert x_min < x_max
     assert min_n < max_n
 
-    gp = GPModel()
+    gp = GPModel(
+        kernel=kernel,
+    )
 
     # Randomly sample input points from range.
     n = torch.randint(low=min_n, high=max_n, size=(1,))
