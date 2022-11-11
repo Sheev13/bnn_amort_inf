@@ -10,8 +10,8 @@ from bnn_amort_inf.models.gp import GPModel
 def gp_dataset_generator(
     x_min: float = -3.0,
     x_max: float = 3.0,
-    min_n: int = 51,
-    max_n: int = 200,
+    min_n: int = 60,
+    max_n: int = 120,
     noise: float = 0.01,
     kernel: str = "se",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
