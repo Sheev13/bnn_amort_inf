@@ -56,7 +56,11 @@ def cubic_dataset(
 
 
 def sawtooth_dataset(
-    noise_std: float = 0.15, min_n: int = 60, max_n: int = 120, limit: float = 3.0
+    noise_std: float = 0.15,
+    min_n: int = 60,
+    max_n: int = 120,
+    lower: float = -3.0,
+    upper: float = 3.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
     noise_std = torch.tensor(noise_std)
@@ -65,7 +69,7 @@ def sawtooth_dataset(
     period = torch.zeros(1).uniform_(0.3, 1.0)
     gradient = torch.tensor(2.0 / period)
 
-    x = torch.zeros(dataset_size).uniform_(-limit, limit)
+    x = torch.zeros(dataset_size).uniform_(lower, upper)
 
     sawtooth = lambda x: gradient * (x % period) - 1
 

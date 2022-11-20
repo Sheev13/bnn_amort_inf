@@ -4,6 +4,15 @@ import gpytorch
 import torch
 
 
+class LaplacianKernel(gpytorch.kernels.Kernel):
+    is_stationary = True
+
+    def forward(self, x1, x2, **params):
+        diff = self.covar_dist(x1, x2, **params)
+        diff.where(diff == 0, torch.as_tensor(1e-20))
+        return torch.exp(-torch.abs(diff))
+
+
 class GPModel(gpytorch.models.ExactGP):
     """Represents a Gaussian process model"""
 
@@ -19,7 +28,8 @@ class GPModel(gpytorch.models.ExactGP):
         kernels = {
             "se": gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()),
             "per": gpytorch.kernels.ScaleKernel(gpytorch.kernels.PeriodicKernel()),
-            "lap": gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=0.5)),
+            # "lap": gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=0.5)),
+            "lap": gpytorch.kernels.ScaleKernel(LaplacianKernel()),
         }
 
         if kernel not in kernels.keys():
