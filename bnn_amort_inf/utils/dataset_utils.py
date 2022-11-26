@@ -35,7 +35,7 @@ def context_target_split(
 
 
 def cubic_dataset(
-    noise_std: float = 4.0,
+    noise_std: float = 3.0,
     dataset_size: int = 100,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
 
@@ -56,7 +56,7 @@ def cubic_dataset(
 
 
 def sawtooth_dataset(
-    noise_std: float = 0.15,
+    noise_std: float = 0.05,
     min_n: int = 60,
     max_n: int = 120,
     lower: float = -3.0,

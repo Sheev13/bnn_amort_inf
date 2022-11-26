@@ -12,7 +12,7 @@ def gp_dataset_generator(
     x_max: float = 3.0,
     min_n: int = 60,
     max_n: int = 120,
-    noise: float = 0.01,
+    noise: float = 0.05,
     kernel: str = "se",
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     assert x_min < x_max
