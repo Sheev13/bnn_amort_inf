@@ -66,7 +66,7 @@ def sawtooth_dataset(
     noise_std = torch.tensor(noise_std)
 
     dataset_size = torch.randint(min_n, max_n, (1,))
-    period = torch.zeros(1).uniform_(0.3, 1.0)
+    period = torch.zeros(1).uniform_(0.8, 1.3)
     gradient = torch.tensor(2.0 / period)
 
     x = torch.zeros(dataset_size).uniform_(lower, upper)

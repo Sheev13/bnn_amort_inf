@@ -25,11 +25,18 @@ class GPModel(gpytorch.models.ExactGP):
     ):
         super().__init__(x, y, likelihood)
 
+        period_prior = gpytorch.priors.NormalPrior(5.0, 0.2)
+        ls_prior = gpytorch.priors.NormalPrior(5.0, 0.4)
+
         kernels = {
             "se": gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel()),
             "per": gpytorch.kernels.ScaleKernel(gpytorch.kernels.PeriodicKernel()),
-            # "lap": gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=0.5)),
             "lap": gpytorch.kernels.ScaleKernel(LaplacianKernel()),
+            "saw": gpytorch.kernels.ScaleKernel(
+                gpytorch.kernels.PeriodicKernel(
+                    period_length_prior=period_prior, lengthscale_prior=ls_prior
+                )
+            ),
         }
 
         if kernel not in kernels.keys():
