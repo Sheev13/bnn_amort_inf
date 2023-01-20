@@ -234,11 +234,10 @@ class AmortisedGIBNN(BaseBNN):
         x = torch.cat((x_c, x_t), dim=0)
         y = torch.cat((y_c, y_t), dim=0)
 
-        # np_kl = KL(q(W|D)||q(W|D_c))
+        F_t_u = self(x, y, x_test=x_t, num_samples=num_samples, data="u")[2]
+        F_t_c = self(x_c, y_c, x_test=x_t, num_samples=num_samples, data="c")[2]
 
-        F_t = self(x, y, x_test=x_t, num_samples=num_samples, data="u")[2]
-        self(x_c, y_c, num_samples=num_samples, data="c")
-
+        # np_kl_total = KL(q(W|D)||q(W|D_c))
         np_kl_total = None
         for layer in self.layers:
             qw_c = layer.cache["qw_c"]
@@ -251,7 +250,7 @@ class AmortisedGIBNN(BaseBNN):
             else:
                 np_kl_total += np_kl
 
-        exp_ll_t = self.exp_ll(F_t, y_t).mean(0)
+        exp_ll_t = self.exp_ll(F_t_c, y_t).mean(0)  # use F_t_u for "correct" version
         np_kl_total = np_kl_total.mean(0)
         loss = exp_ll_t - np_kl_total
 
