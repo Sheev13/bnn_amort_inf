@@ -56,12 +56,15 @@ class GIBNNLayer(BaseBNNLayer, ABC):
         return torch.distributions.MultivariateNormal(q_mu, q_cov)
 
     def forward(
-        self, U: torch.Tensor, *args, **kwargs
+        self, U: torch.Tensor, data: Optional[str] = None, *args, **kwargs
     ):  # pylint: disable=arguments-differ
         """Computes q(w) and stores in cache."""
         pseudo_likelihood = self.pseudo_likelihood(*args, **kwargs)
         qw = self.qw(U, pseudo_likelihood)
-        self._cache["qw"] = qw
+        if data is None:
+            self._cache["qw"] = qw
+        else:
+            self._cache["qw_" + data] = qw
 
 
 class FreeFormGIBNNLayer(GIBNNLayer):

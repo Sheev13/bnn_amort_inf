@@ -12,6 +12,7 @@ def train_metamodel(
     model,
     dataset: MetaDataset,
     neural_process: bool = False,
+    np_loss: bool = False,
     min_context: int = 3,
     max_context: int = 50,
     max_iters: int = 10_000,
@@ -49,12 +50,15 @@ def train_metamodel(
 
             x, y = x.squeeze(0), y.squeeze(0)
 
-            if neural_process:
+            if neural_process or np_loss:
                 # Randomly sample context and target points.
                 (x_c, y_c), (x_t, y_t) = context_target_split(
                     x, y, min_context, max_context
                 )
-                loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+                if np_loss:
+                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
+                else:
+                    loss, metrics = model.loss(x_c, y_c, x_t, y_t)
             else:
                 loss, metrics = model.loss(x, y, num_samples)
 

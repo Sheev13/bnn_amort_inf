@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -149,6 +149,9 @@ class AmortisedGIBNN(BaseBNN):
         y: torch.Tensor,
         x_test: Optional[torch.Tensor] = None,
         num_samples: int = 1,
+        data: Optional[
+            str
+        ] = None,  # not None if np loss in use. Specifies if context or union dataset
     ) -> Tuple[torch.Tensor, torch.Tensor, Union[torch.Tensor, None]]:
         assert len(x.shape) == 2
         assert len(y.shape) == 2
@@ -176,11 +179,14 @@ class AmortisedGIBNN(BaseBNN):
 
             # Sample GIBNNLayer.
             if i == (len(self.layers) - 1):
-                layer(U=F, y=y, noise=self.noise)
+                layer(U=F, data=data, y=y, noise=self.noise)
             else:
-                layer(U=F, x=x, y=y)
+                layer(U=F, data=data, x=x, y=y)
 
-            qw = layer.cache["qw"]
+            if data is None:
+                qw = layer.cache["qw"]
+            else:
+                qw = layer.cache["qw_" + data]
 
             # (num_samples, output_dim, input_dim).
             w = qw.rsample()
@@ -207,3 +213,53 @@ class AmortisedGIBNN(BaseBNN):
                 kl_total += kl
 
         return F, kl_total, F_test
+
+    def np_loss(
+        self,
+        x_c: torch.Tensor,
+        y_c: torch.Tensor,
+        x_t: torch.Tensor,
+        y_t: torch.Tensor,
+        num_samples: int = 1,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        assert len(x_c.shape) == 2
+        assert len(y_c.shape) == 2
+        assert len(x_t.shape) == 2
+        assert len(y_t.shape) == 2
+        assert x_c.shape[-1] == self.x_dim
+        assert y_c.shape[-1] == self.y_dim
+        assert x_t.shape[-1] == self.x_dim
+        assert y_t.shape[-1] == self.y_dim
+
+        x = torch.cat((x_c, x_t), dim=0)
+        y = torch.cat((y_c, y_t), dim=0)
+
+        # np_kl = KL(q(W|D)||q(W|D_c))
+
+        F_t = self(x, y, x_test=x_t, num_samples=num_samples, data="u")[2]
+        self(x_c, y_c, num_samples=num_samples, data="c")
+
+        np_kl_total = None
+        for layer in self.layers:
+            qw_c = layer.cache["qw_c"]
+            qw_u = layer.cache["qw_u"]
+
+            np_kl = torch.distributions.kl.kl_divergence(qw_u, qw_c).sum(-1)
+
+            if np_kl_total is None:
+                np_kl_total = np_kl
+            else:
+                np_kl_total += np_kl
+
+        exp_ll_t = self.exp_ll(F_t, y_t).mean(0)
+        np_kl_total = np_kl_total.mean(0)
+        loss = exp_ll_t - np_kl_total
+
+        metrics = {
+            "loss": loss.item(),
+            "exp_ll_t": exp_ll_t.item(),
+            "np_kl": np_kl_total.item(),
+            "noise": self.noise.item(),
+        }
+
+        return (-loss / x.shape[0]), metrics
