@@ -250,7 +250,7 @@ class AmortisedGIBNN(BaseBNN):
             else:
                 np_kl_total += np_kl
 
-        exp_ll_t = self.exp_ll(F_t_c, y_t).mean(0)  # use F_t_u for "correct" version
+        exp_ll_t = self.exp_ll(F_t_u, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
         np_kl_total = np_kl_total.mean(0)
         loss = exp_ll_t - np_kl_total
 
@@ -261,4 +261,4 @@ class AmortisedGIBNN(BaseBNN):
             "noise": self.noise.item(),
         }
 
-        return (-loss / x.shape[0]), metrics
+        return (-loss / x_t.shape[0]), metrics
