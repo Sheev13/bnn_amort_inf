@@ -27,3 +27,33 @@ class MLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+class CNN(nn.Module):
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass
+
+
+class SetConv(nn.Module):
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass
+
+
+class ResNet(nn.Module):
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass

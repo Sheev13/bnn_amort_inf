@@ -4,11 +4,11 @@ import torch
 from torch import nn
 
 from ..utils.activations import NormalActivation
-from ..utils.networks import MLP
+from ..utils.networks import CNN, MLP, ResNet, SetConv
 
 
-class Encoder(nn.Module):
-    """Represents the deterministic encoder for a neural process."""
+class CNPEncoder(nn.Module):
+    """Represents the deterministic encoder for a conditional neural process."""
 
     def __init__(
         self,
@@ -37,12 +37,17 @@ class Encoder(nn.Module):
         assert x_c.shape[1] == self.x_dim
         assert y_c.shape[1] == self.y_dim
 
-        return self.mlp(torch.cat((x_c, y_c), dim=-1))
+        return self.mlp(torch.cat((x_c, y_c), dim=-1)).sum(0)
 
 
-class CNPEncoder(Encoder):
-    def forward(self, *args, **kwargs) -> torch.Tensor:
-        return super().forward(*args, **kwargs).sum(0)
+class ConvCNPEncoder(nn.Module):
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass
 
 
 class Decoder(nn.Module):
@@ -88,26 +93,24 @@ class Decoder(nn.Module):
         return self.mlp(torch.cat((z_c, x_t), dim=-1))
 
 
-class CNP(nn.Module):
-    """Represents a vanilla conditional neural process."""
+class BaseNP(nn.Module):
+    """Represents a neural process base class"""
 
     def __init__(
         self,
         x_dim: int,
         y_dim: int,
         embedded_dim: int,
-        encoder_hidden_dims: List[int],
         decoder_hidden_dims: List[int],
-        nonlinearity: nn.Module = nn.ReLU(),
-        noise: float = 1e-2,
-        train_noise: bool = True,
-        decoder_activation: nn.Module = NormalActivation(),
+        nonlinearity: nn.Module,
+        noise: float,
+        train_noise: bool,
+        decoder_activation: nn.Module,
     ):
         super().__init__()
 
-        self.encoder = CNPEncoder(
-            x_dim, y_dim, encoder_hidden_dims, embedded_dim, nonlinearity
-        )
+        self.encoder = None
+
         self.decoder = Decoder(
             x_dim,
             y_dim,
@@ -128,6 +131,8 @@ class CNP(nn.Module):
     def forward(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor
     ) -> torch.distributions.Distribution:
+        if self.encoder is None:
+            raise NotImplementedError
         decode = self.decoder(self.encoder(x_c, y_c), x_t)
         if isinstance(decode, torch.distributions.Distribution):
             return decode
@@ -142,3 +147,67 @@ class CNP(nn.Module):
 
         metrics = {"ll": ll.item(), "noise": self.noise.detach().item()}
         return (-ll / x_t.shape[0]), metrics
+
+
+class CNP(BaseNP):
+    """Represents a Conditional Neural Process"""
+
+    def __init__(
+        self,
+        x_dim: int,
+        y_dim: int,
+        encoder_hidden_dims: List[int],
+        embedded_dim: int,
+        decoder_hidden_dims: List[int],
+        nonlinearity: nn.Module = nn.ReLU(),
+        noise: float = 1e-2,
+        train_noise: bool = True,
+        decoder_activation: nn.Module = NormalActivation(),
+    ):
+        super().__init__(
+            x_dim,
+            y_dim,
+            embedded_dim,
+            decoder_hidden_dims,
+            nonlinearity=nonlinearity,
+            noise=noise,
+            train_noise=train_noise,
+            decoder_activation=decoder_activation,
+        )
+
+        self.encoder = CNPEncoder(
+            x_dim,
+            y_dim,
+            encoder_hidden_dims,
+            embedded_dim,
+            nonlinearity=nonlinearity,
+            activation=nn.Identity(),
+        )
+
+
+class ConvCNP(BaseNP):
+    """Represents a Convolutional Conditional Neural Process"""
+
+    def __init__(
+        self,
+        x_dim: int,
+        y_dim: int,
+        embedded_dim: int,
+        decoder_hidden_dims: List[int],
+        nonlinearity: nn.Module = nn.ReLU(),
+        noise: float = 1e-2,
+        train_noise: bool = True,
+        decoder_activation: nn.Module = NormalActivation(),
+    ):
+        super().__init__(
+            x_dim,
+            y_dim,
+            embedded_dim,
+            decoder_hidden_dims,
+            nonlinearity=nonlinearity,
+            noise=noise,
+            train_noise=train_noise,
+            decoder_activation=decoder_activation,
+        )
+
+        self.encoder = ConvCNPEncoder()
