@@ -51,7 +51,6 @@ class ConvCNPEncoder(nn.Module):
         conv: nn.Module = nn.Conv1d,
         nonlinearity: nn.Module = nn.ReLU(),
         normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
-        interpolator: nn.Module = SetConv,
         **conv_layer_kwargs,
     ):
         super().__init__()
@@ -65,7 +64,7 @@ class ConvCNPEncoder(nn.Module):
             **conv_layer_kwargs,
         )
 
-        self.interpolator = interpolator()
+        self.set_conv = SetConv()
 
     def forward(self):
         pass
