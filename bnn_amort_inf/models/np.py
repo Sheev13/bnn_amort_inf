@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from ..utils.activations import NormalActivation
-from ..utils.networks import CNN, MLP, ResNet, SetConv
+from ..utils.networks import CNN, MLP, SetConv
 
 
 class CNPEncoder(nn.Module):
