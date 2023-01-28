@@ -43,8 +43,29 @@ class CNPEncoder(nn.Module):
 class ConvCNPEncoder(nn.Module):
     def __init__(
         self,
+        x_dim: int,
+        y_dim: int,
+        embedded_dim: int,
+        cnn_dims: List[int],
+        kernel_size: int,
+        conv: nn.Module = nn.Conv1d,
+        nonlinearity: nn.Module = nn.ReLU(),
+        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
+        interpolator: nn.Module = SetConv,
+        **conv_layer_kwargs,
     ):
         super().__init__()
+
+        self.cnn = CNN(
+            cnn_dims,
+            kernel_size,
+            conv,
+            nonlinearity,
+            normalisation,
+            **conv_layer_kwargs,
+        )
+
+        self.interpolator = interpolator()
 
     def forward(self):
         pass
