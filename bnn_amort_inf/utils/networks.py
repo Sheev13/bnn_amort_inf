@@ -43,12 +43,14 @@ class ConvLayer(nn.Module):
         super().__init__()
 
         self.nonlinearity = nonlinearity
+        if not kernel_size % 2:
+            kernel_size += 1
         padding = kernel_size // 2
         self.conv = conv(input_dim, output_dim, kernel_size, padding=padding, **kwargs)
         self.normalisation = normalisation(input_dim)
 
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return self.conv(self.nonlinearity(self.normalisation(x)))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(self.nonlinearity(self.normalisation(x)))
 
 
 class CNN(nn.Module):
@@ -86,8 +88,45 @@ class CNN(nn.Module):
 class SetConv(nn.Module):
     def __init__(
         self,
+        in_dim: int,
+        out_dim: int,
+        train_lengthscale: bool = True,
+        lengthscale: float = 5e-1,
     ):
         super().__init__()
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.in_chan = in_dim + out_dim
+        self.func = nn.Sequential(nn.Linear(self.in_chan, self.out_dim))
+        self.log_sigma = nn.Parameter(
+            torch.tensor(lengthscale).log() * torch.ones(self.in_chan),
+            requires_grad=train_lengthscale,
+        )
 
-    def forward(self):
-        pass
+    @property
+    def sigma(self):
+        return self.log_sigma.exp()
+
+    def rbf(self, dists):
+        return (-0.5 * dists.unsqueeze(-1) / self.sigma**2).exp()
+
+    def forward(self, x_c, y_c, x_grid):
+        assert x_c.shape[1] == self.in_dim
+        if len(x_grid.shape) == 1:
+            x_grid = x_grid.unsqueeze(1)
+
+        dists = torch.cdist(x_c, x_grid, p=2).squeeze(1)  # shape (num_c, num_grid)
+        w = self.rbf(dists)  # shape (num_c, num_grid, in_chan)
+        density = torch.ones_like(x_c)
+
+        F = torch.cat([density, y_c], dim=-1)  # shape (num_c, in_chan)
+        F = F.unsqueeze(1) * w  # shape (num_c, num_grid, in_chan)
+        F = F.sum(0)  # shape (num_grid, in_chan)
+
+        # normalise convolution using density channel
+        density, conv = F[:, : self.in_dim], F[:, self.in_dim :]
+        norm_conv = conv / (density + 1e-8)
+        F = torch.cat([density, norm_conv], dim=-1)
+
+        F = self.func(F)  # shape (num_grid, out_chan)
+        return F
