@@ -294,7 +294,7 @@ class ConvCNP(BaseNP):
         self,
         x_dim: int,
         y_dim: int,
-        cnn_dims: List[int] = [128, 128, 128],
+        cnn_dims: List[int] = [64, 64],
         kernel_size: int = 8,
         granularity: int = 64,  # discretized points per unit
         nonlinearity: nn.Module = nn.ReLU(),
