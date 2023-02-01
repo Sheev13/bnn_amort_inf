@@ -73,7 +73,7 @@ class ConvCNPEncoder(nn.Module):
         )
 
         self.set_conv = SetConv(
-            x_dim, y_dim, train_lengthscale=True, lengthscale=0.5  # 2.0 / granularity
+            x_dim, y_dim, train_lengthscale=True, lengthscale=0.05 * granularity
         )
 
         self.x_dim = x_dim
