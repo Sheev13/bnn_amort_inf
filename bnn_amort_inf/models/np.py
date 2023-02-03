@@ -41,7 +41,7 @@ class CNPEncoder(nn.Module):
 
 
 class ConvCNPEncoder(nn.Module):
-    """Represents the encoder of a convolutional conditional neural process."""
+    """Represents a ConvCNP encoder for off-the-grid data.."""
 
     def __init__(
         self,
@@ -73,7 +73,7 @@ class ConvCNPEncoder(nn.Module):
         )
 
         self.set_conv = SetConv(
-            x_dim, y_dim, train_lengthscale=True, lengthscale=0.05 * granularity
+            x_dim, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
         )
 
         self.x_dim = x_dim
@@ -96,15 +96,27 @@ class ConvCNPEncoder(nn.Module):
         num_points = int((x_max - x_min) * self.granularity)
         x_grid = torch.linspace(x_min, x_max, num_points)
 
-        F = self.set_conv(x_c, y_c, x_grid).T
+        F = self.set_conv(x_c, y_c, x_grid).permute(1, 0)
         F = self.nonlinearity(F)
-        F = self.cnn(F.unsqueeze(0)).T.squeeze()
+        F = self.cnn(F.unsqueeze(0)).squeeze().permute(1, 0)
 
         assert len(F.shape) == 2
         assert F.shape[0] == num_points
         assert F.shape[1] == 2
 
         return (F, x_grid)
+
+
+class GridConvCNPEncoder(nn.Module):
+    """Represents the encoder for a ConvCNP operating on-the-grid"""
+
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass
 
 
 class CNPDecoder(nn.Module):
@@ -151,7 +163,7 @@ class CNPDecoder(nn.Module):
 
 
 class ConvCNPDecoder(nn.Module):
-    """Represents the decoder of a convolutional conditional neural process."""
+    """Represents a ConvCNP decoder for off-the-grid data."""
 
     def __init__(
         self,
@@ -185,6 +197,18 @@ class ConvCNPDecoder(nn.Module):
             x_grid.unsqueeze(1), z_c[:, 1].unsqueeze(1), x_t
         ).exp()
         return torch.distributions.Normal(mean, sigma)
+
+
+class GridConvCNPDecoder(nn.Module):
+    """Represents the decoder for a ConvCNP operating on-the-grid"""
+
+    def __init__(
+        self,
+    ):
+        super().__init__()
+
+    def forward(self):
+        pass
 
 
 class BaseNP(nn.Module):
@@ -288,7 +312,7 @@ class CNP(BaseNP):
 
 
 class ConvCNP(BaseNP):
-    """Represents a Convolutional Conditional Neural Process"""
+    """Represents a ConvCNP for off-the-grid data"""
 
     def __init__(
         self,
@@ -323,3 +347,27 @@ class ConvCNP(BaseNP):
             y_dim,
             granularity,
         )
+
+
+class GridConvCNP(BaseNP):
+    """Represents a ConvCNP operating on-the-grid"""
+
+    def __init__(
+        self,
+        x_dim: int,
+        y_dim: int,
+        cnn_dims: List[int] = [64, 64],
+        kernel_size: int = 8,
+        granularity: int = 64,  # discretized points per unit
+        nonlinearity: nn.Module = nn.ReLU(),
+        **conv_layer_kwargs,
+    ):
+        super().__init__(
+            x_dim,
+            y_dim,
+            nonlinearity,
+        )
+
+        self.encoder = GridConvCNPEncoder()
+
+        self.decoder = GridConvCNPDecoder()

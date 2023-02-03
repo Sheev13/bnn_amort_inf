@@ -29,30 +29,6 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-class ConvLayer(nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        kernel_size: int,
-        conv: nn.Module,
-        nonlinearity: nn.Module,
-        normalisation: nn.Module,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.nonlinearity = nonlinearity
-        if not kernel_size % 2:
-            kernel_size += 1
-        padding = kernel_size // 2
-        self.conv = conv(input_dim, output_dim, kernel_size, padding=padding, **kwargs)
-        self.normalisation = normalisation(input_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.conv(self.nonlinearity(self.normalisation(x)))
-
-
 class CNN(nn.Module):
     def __init__(
         self,
@@ -60,24 +36,27 @@ class CNN(nn.Module):
         kernel_size: int,
         conv: nn.Module = nn.Conv1d,
         nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
+        normalisation: nn.Module = nn.Identity,  # e.g. nn.BatchNorm1d
         **conv_layer_kwargs,
     ):
         super().__init__()
 
+        padding = "same"
+
         net = []
         for i in range(len(dims) - 1):
+            net.append(normalisation(dims[i]))
             net.append(
-                ConvLayer(
+                conv(
                     dims[i],
                     dims[i + 1],
                     kernel_size,
-                    conv,
-                    nonlinearity,
-                    normalisation,
+                    padding=padding,
                     **conv_layer_kwargs,
                 )
             )
+            if i < len(dims) - 2:
+                net.append(nonlinearity)
 
         self.net = nn.Sequential(*net)
 
