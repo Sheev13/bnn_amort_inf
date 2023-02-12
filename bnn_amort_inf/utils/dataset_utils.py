@@ -78,3 +78,29 @@ def sawtooth_dataset(
     )
 
     return x.unsqueeze(-1), y.unsqueeze(-1)
+
+
+def random_mask(ratio: float, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    dims = image.shape[-2:]
+    mask = (torch.Tensor(dims).uniform_() < ratio).double()
+    return image * mask, mask
+
+
+def vis_ctxt_img(mask: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
+    if len(image.shape) == 4 and image.shape[0] == 1:
+        image = image.squeeze(0)
+    assert len(image.shape) == 3
+    assert image.shape[0] == 1  # greyscale
+
+    image = torch.cat((image, image, image), dim=0)
+    blue = torch.cat(
+        (
+            torch.zeros_like(mask).unsqueeze(0),
+            torch.zeros_like(mask).unsqueeze(0),
+            torch.ones_like(mask).unsqueeze(0),
+        ),
+        dim=0,
+    )
+    image = torch.where(mask, image, blue)
+
+    return image.permute(1, 2, 0)  # permutation needed for matplotlib

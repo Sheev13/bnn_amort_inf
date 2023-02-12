@@ -1,10 +1,29 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from ..utils.activations import NormalActivation
 from ..utils.networks import CNN, MLP, SetConv
+
+
+def make_abs_conv(Conv):
+    """Make a convolution have only positive parameters."""
+
+    class AbsConv(Conv):
+        def forward(self, input):
+            return F.conv2d(
+                input,
+                self.weight.abs(),
+                self.bias,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )
+
+    return AbsConv
 
 
 class CNPEncoder(nn.Module):
@@ -47,7 +66,8 @@ class ConvCNPEncoder(nn.Module):
         self,
         x_dim: int,
         y_dim: int,
-        cnn_dims: List[int],
+        cnn_chans: List[int],
+        embedded_dim: int,
         kernel_size: int,
         granularity: int,
         conv: nn.Module = nn.Conv1d,
@@ -57,14 +77,13 @@ class ConvCNPEncoder(nn.Module):
     ):
         super().__init__()
 
-        if cnn_dims[-1] != 2:
-            cnn_dims.append(2)  # output channels for mu and sigma
+        if cnn_chans[-1] != 2:
+            cnn_chans.append(2)  # output channels for mu and sigma
 
-        if cnn_dims[0] != y_dim:
-            cnn_dims = [y_dim] + cnn_dims
+        cnn_chans = [embedded_dim] + cnn_chans
 
         self.cnn = CNN(
-            cnn_dims,
+            cnn_chans,
             kernel_size,
             conv,
             nonlinearity,
@@ -73,14 +92,14 @@ class ConvCNPEncoder(nn.Module):
         )
 
         self.set_conv = SetConv(
-            x_dim, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            x_dim, embedded_dim, train_lengthscale=True, lengthscale=0.1 * granularity
         )
 
         self.x_dim = x_dim
         self.y_dim = y_dim
+        self.embedded_dim = embedded_dim
         self.granularity = granularity
         self.nonlinearity = nonlinearity
-        self.embedded_dim = cnn_dims[-1]
 
     def forward(self, x_c, y_c, x_t):
         assert len(x_c.shape) == 2
@@ -112,11 +131,53 @@ class GridConvCNPEncoder(nn.Module):
 
     def __init__(
         self,
+        x_dim: int,  # should be 2 for an image
+        y_dim: int,  # should be 3 for a colour image (rgb)
+        embedded_dim: int,
+        kernel_size: int,
+        conv: nn.Module = nn.Conv2d,
+        **conv_layer_kwargs,
     ):
         super().__init__()
 
-    def forward(self):
-        pass
+        # might need to do something here to ensure positivity!
+        self.conv = conv(
+            y_dim,
+            y_dim,
+            kernel_size=kernel_size,
+            groups=y_dim,
+            padding="same",
+            **conv_layer_kwargs,
+        )
+        print(self.conv.in_channels)
+        print(self.conv.groups)
+        self.conv = make_abs_conv(self.conv)
+
+        self.resizer = nn.Sequential(nn.Linear(y_dim * 2, embedded_dim))
+
+        self.embedded_dim = embedded_dim
+        self.x_dim = x_dim
+        self.y_dim = y_dim
+
+    def forward(self, I: torch.Tensor, M_c: torch.Tensor) -> torch.Tensor:
+        assert len(I.shape) == self.x_dim + 1  # extra dimension for colour channels
+        assert I.shape[0] == self.y_dim
+        if len(M_c.shape) == self.x_dim:
+            M_c = M_c.unsqueeze(0)
+        assert len(M_c.shape) == len(I.shape)
+
+        I_c = I * M_c  # get context pixels from image and context mask
+        # shape (y_dim, *grid_shape), where len(*grid_shape) is x_dim
+
+        F = self.conv(I_c)
+        density = self.conv(M_c)
+        F = F / torch.clamp(density, min=1e-8)  # normalise
+        F = torch.cat([F, density], dim=0)  # shape (y_dim*2, *grid_shape)
+        F = self.resizer(F.permute(1, 2, 0)).permute(
+            2, 0, 1
+        )  # shape (embedded_dim, *grid_shape)
+
+        return F
 
 
 class CNPDecoder(nn.Module):
@@ -188,6 +249,7 @@ class ConvCNPDecoder(nn.Module):
         E: Tuple[torch.Tensor, torch.Tensor],
         x_t: torch.Tensor,
     ) -> torch.distributions.Distribution:
+
         z_c, x_grid = E
         assert len(x_t.shape) == 2
         assert x_t.shape[1] == self.x_dim
@@ -204,11 +266,44 @@ class GridConvCNPDecoder(nn.Module):
 
     def __init__(
         self,
+        x_dim: int,  # should be 2 for an image
+        y_dim: int,  # should be 3 for a colour image (rgb)
+        cnn_chans: List[int],
+        embedded_dim: int,
+        kernel_size: int,
+        conv: nn.Module = nn.Conv2d,
+        nonlinearity: nn.Module = nn.ReLU(),
+        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
+        activation: nn.Module = NormalActivation(),
+        **conv_layer_kwargs,
     ):
         super().__init__()
 
-    def forward(self):
-        pass
+        if cnn_chans[-1] != 2 * y_dim:
+            cnn_chans.append(2 * y_dim)  # output channels for mu and sigma
+
+        cnn_chans = [embedded_dim] + cnn_chans
+
+        self.cnn = CNN(
+            cnn_chans,
+            kernel_size,
+            conv,
+            nonlinearity,
+            normalisation,
+            **conv_layer_kwargs,
+        )
+
+        self.embedded_dim = embedded_dim
+        self.x_dim = x_dim
+        self.y_dim = y_dim
+        self.activation = activation
+
+    def forward(self, E: torch.Tensor) -> torch.distributions.Distribution:
+        assert E.shape[0] == self.embedded_dim
+        assert len(E.shape) - 1 == self.x_dim
+
+        F = self.cnn(E)  # shape (*grid_dims, y_dim*2)
+        return self.activation(F)
 
 
 class BaseNP(nn.Module):
@@ -219,6 +314,7 @@ class BaseNP(nn.Module):
         x_dim: int,
         y_dim: int,
         nonlinearity: nn.Module,
+        embedded_dim: int = 64,
         noise: float = 1e-2,
         train_noise: bool = True,
     ):
@@ -227,6 +323,7 @@ class BaseNP(nn.Module):
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.nonlinearity = nonlinearity
+        self.embedded_dim = embedded_dim
 
         self.encoder = None
         self.decoder = None
@@ -246,10 +343,11 @@ class BaseNP(nn.Module):
     def forward(
         self, x_c: torch.Tensor, y_c: torch.Tensor, x_t: torch.Tensor
     ) -> torch.distributions.Distribution:
+
         if self.encoder is None or self.decoder is None:
             raise NotImplementedError
 
-        if self.conv:
+        elif self.conv:
             decode = self.decoder(self.encoder(x_c, y_c, x_t), x_t)
         else:
             decode = self.decoder(self.encoder(x_c, y_c), x_t)
@@ -288,6 +386,7 @@ class CNP(BaseNP):
             x_dim,
             y_dim,
             nonlinearity,
+            embedded_dim,
             noise,
             train_noise,
         )
@@ -318,7 +417,9 @@ class ConvCNP(BaseNP):
         self,
         x_dim: int,
         y_dim: int,
-        cnn_dims: List[int] = [64, 64],
+        embedded_dim: int = 64,
+        cnn_chans: List[int] = [32, 32],
+        conv: nn.Module = nn.Conv1d,
         kernel_size: int = 8,
         granularity: int = 64,  # discretized points per unit
         nonlinearity: nn.Module = nn.ReLU(),
@@ -328,15 +429,17 @@ class ConvCNP(BaseNP):
             x_dim,
             y_dim,
             nonlinearity,
+            embedded_dim,
         )
 
         self.encoder = ConvCNPEncoder(
             x_dim,
             y_dim,
-            cnn_dims,
+            cnn_chans,
+            embedded_dim,
             kernel_size,
             granularity,
-            conv=nn.Conv1d,
+            conv=conv,
             nonlinearity=nn.ReLU(),
             normalisation=nn.Identity,  # nn.BatchNorm1d
             **conv_layer_kwargs,
@@ -349,25 +452,58 @@ class ConvCNP(BaseNP):
         )
 
 
-class GridConvCNP(BaseNP):
+class GridConvCNP(nn.Module):
     """Represents a ConvCNP operating on-the-grid"""
 
     def __init__(
         self,
         x_dim: int,
         y_dim: int,
-        cnn_dims: List[int] = [64, 64],
+        embedded_dim: int = 64,
+        cnn_chans: List[int] = [64, 64],
+        conv: nn.Module = nn.Conv2d,
         kernel_size: int = 8,
-        granularity: int = 64,  # discretized points per unit
         nonlinearity: nn.Module = nn.ReLU(),
         **conv_layer_kwargs,
     ):
-        super().__init__(
-            x_dim,
-            y_dim,
-            nonlinearity,
+        super().__init__()
+
+        self.x_dim = x_dim
+        self.y_dim = y_dim
+        self.nonlinearity = nonlinearity
+
+        self.encoder = GridConvCNPEncoder(
+            x_dim,  # should be 2 for an image
+            y_dim,  # should be 3 for a colour image (rgb)
+            embedded_dim,
+            kernel_size,
+            conv=conv,
+            **conv_layer_kwargs,
         )
 
-        self.encoder = GridConvCNPEncoder()
+        self.decoder = GridConvCNPDecoder(
+            x_dim,  # should be 2 for an image
+            y_dim,  # should be 3 for a colour image (rgb)
+            cnn_chans,
+            embedded_dim,
+            kernel_size,
+            conv=conv,
+            nonlinearity=nonlinearity,
+            normalisation=nn.Identity,  # nn.BatchNorm1d
+            activation=NormalActivation(),
+            **conv_layer_kwargs,
+        )
 
-        self.decoder = GridConvCNPDecoder()
+    def forward(
+        self, I: torch.Tensor, M_c: torch.Tensor
+    ) -> torch.distributions.Distribution:
+        assert I.shape[-2:] == M_c.shape
+        return self.decoder(self.encoder(I, M_c))
+
+    def loss(
+        self, I: torch.Tensor, M_c: torch.Tensor
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        dist = self.forward(I, M_c)
+        ll = dist.log_prob(I).sum()
+        metrics = {"ll": ll.item()}
+        return (-ll / torch.numel(M_c)), metrics

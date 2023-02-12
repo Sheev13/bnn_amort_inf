@@ -32,7 +32,7 @@ class MLP(nn.Module):
 class CNN(nn.Module):
     def __init__(
         self,
-        dims: List[int],
+        chans: List[int],
         kernel_size: int,
         conv: nn.Module = nn.Conv1d,
         nonlinearity: nn.Module = nn.ReLU(),
@@ -44,18 +44,18 @@ class CNN(nn.Module):
         padding = "same"
 
         net = []
-        for i in range(len(dims) - 1):
-            net.append(normalisation(dims[i]))
+        for i in range(len(chans) - 1):
+            net.append(normalisation(chans[i]))
             net.append(
                 conv(
-                    dims[i],
-                    dims[i + 1],
+                    chans[i],
+                    chans[i + 1],
                     kernel_size,
                     padding=padding,
                     **conv_layer_kwargs,
                 )
             )
-            if i < len(dims) - 2:
+            if i < len(chans) - 2:
                 net.append(nonlinearity)
 
         self.net = nn.Sequential(*net)
@@ -76,7 +76,7 @@ class SetConv(nn.Module):
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.in_chan = in_dim + out_dim
-        self.func = nn.Sequential(nn.Linear(self.in_chan, self.out_dim))
+        self.resizer = nn.Sequential(nn.Linear(self.in_chan, self.out_dim))
         self.log_sigma = nn.Parameter(
             torch.tensor(lengthscale).log() * torch.ones(self.in_chan),
             requires_grad=train_lengthscale,
@@ -98,7 +98,9 @@ class SetConv(nn.Module):
         w = self.rbf(dists)  # shape (num_c, num_grid, in_chan)
         density = torch.ones_like(x_c)
 
-        F = torch.cat([density, y_c], dim=-1)  # shape (num_c, in_chan)
+        F = torch.cat(
+            [density, y_c.repeat(1, self.out_dim)], dim=-1
+        )  # shape (num_c, in_chan)     repeat here is new
         F = F.unsqueeze(1) * w  # shape (num_c, num_grid, in_chan)
         F = F.sum(0)  # shape (num_grid, in_chan)
 
@@ -107,5 +109,5 @@ class SetConv(nn.Module):
         norm_conv = conv / (density + 1e-8)
         F = torch.cat([density, norm_conv], dim=-1)
 
-        F = self.func(F)  # shape (num_grid, out_chan)
+        F = self.resizer(F)  # shape (num_grid, out_dim)
         return F

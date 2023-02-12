@@ -24,6 +24,7 @@ def train_metamodel(
     ref_es_iters: int = 300,
     smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
+    gridconv: bool = False,
 ) -> Dict[str, List[Any]]:
 
     assert ref_es_iters < min_es_iters
@@ -40,27 +41,38 @@ def train_metamodel(
         opt.zero_grad()
         batch_loss = torch.tensor(0.0)
         batch_metrics: Dict = defaultdict(float)
-        for _ in range(batch_size):
+        for _ in range(
+            batch_size
+        ):  # reimplement this to be vectorised (introduce batch dimensionality)
 
-            try:
-                (x, y) = next(dataset_iterator)
-            except StopIteration:
-                dataset_iterator = iter(dataloader)
-                (x, y) = next(dataset_iterator)
+            if gridconv:
+                try:
+                    (I, M_c) = next(dataset_iterator)
+                except StopIteration:
+                    dataset_iterator = iter(dataloader)
+                    (I, M_c) = next(dataset_iterator)
+                I, M_c = I.squeeze(0), M_c.squeeze(0)
+                assert len(I.shape) == 3
+                loss, metrics = model.loss(I, M_c)
 
-            x, y = x.squeeze(0), y.squeeze(0)
-
-            if neural_process or np_loss:
-                # Randomly sample context and target points.
-                (x_c, y_c), (x_t, y_t) = context_target_split(
-                    x, y, min_context, max_context
-                )
-                if np_loss:
-                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
-                else:
-                    loss, metrics = model.loss(x_c, y_c, x_t, y_t)
             else:
-                loss, metrics = model.loss(x, y, num_samples)
+                try:
+                    (x, y) = next(dataset_iterator)
+                except StopIteration:
+                    dataset_iterator = iter(dataloader)
+                    (x, y) = next(dataset_iterator)
+                x, y = x.squeeze(0), y.squeeze(0)
+                if neural_process or np_loss:
+                    # Randomly sample context and target points.
+                    (x_c, y_c), (x_t, y_t) = context_target_split(
+                        x, y, min_context, max_context
+                    )
+                    if np_loss:
+                        loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
+                    else:
+                        loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+                else:
+                    loss, metrics = model.loss(x, y, num_samples)
 
             batch_loss += loss / batch_size
             for key, value in metrics.items():
