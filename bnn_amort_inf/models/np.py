@@ -15,7 +15,7 @@ def make_abs_conv(Conv):
         def forward(self, input):
             return F.conv2d(
                 input,
-                self.weight.abs(),
+                self.weight.exp(),
                 self.bias,
                 self.stride,
                 self.padding,
@@ -141,17 +141,15 @@ class GridConvCNPEncoder(nn.Module):
         super().__init__()
 
         # might need to do something here to ensure positivity!
-        self.conv = conv(
+        self.conv = make_abs_conv(conv)
+        self.conv = self.conv(
             y_dim,
             y_dim,
             kernel_size=kernel_size,
             groups=y_dim,
             padding="same",
             **conv_layer_kwargs,
-        )
-        print(self.conv.in_channels)
-        print(self.conv.groups)
-        self.conv = make_abs_conv(self.conv)
+        )  # (y_dim)
 
         self.resizer = nn.Sequential(nn.Linear(y_dim * 2, embedded_dim))
 
@@ -301,9 +299,8 @@ class GridConvCNPDecoder(nn.Module):
     def forward(self, E: torch.Tensor) -> torch.distributions.Distribution:
         assert E.shape[0] == self.embedded_dim
         assert len(E.shape) - 1 == self.x_dim
-
-        F = self.cnn(E)  # shape (*grid_dims, y_dim*2)
-        return self.activation(F)
+        F = self.cnn(E)  # shape (y_dim*2, *grid_dims)
+        return self.activation(F, dim=0)
 
 
 class BaseNP(nn.Module):
