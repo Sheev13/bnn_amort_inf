@@ -1,9 +1,9 @@
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import gpytorch
 import torch
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from .dataset_utils import MetaDataset, context_target_split
 
@@ -25,6 +25,7 @@ def train_metamodel(
     smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
     gridconv: bool = False,
+    man_thresh: Optional[int] = None,
 ) -> Dict[str, List[Any]]:
 
     assert ref_es_iters < min_es_iters
@@ -96,7 +97,14 @@ def train_metamodel(
                 sum(tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters])
                 / smooth_es_iters
             )
-            if es and ref_loss - curr_loss < abs(es_thresh * ref_loss):
+            if (
+                es
+                and ref_loss - curr_loss < abs(es_thresh * ref_loss)
+                and man_thresh is None
+            ):
+                break
+        if man_thresh is not None:
+            if batch_metrics["ll"] > man_thresh:
                 break
 
     return tracker

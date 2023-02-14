@@ -134,7 +134,7 @@ class GridConvCNPEncoder(nn.Module):
         x_dim: int,  # should be 2 for an image
         y_dim: int,  # should be 3 for a colour image (rgb)
         embedded_dim: int,
-        kernel_size: int,
+        conv_kernel_size: int,
         conv: nn.Module = nn.Conv2d,
         **conv_layer_kwargs,
     ):
@@ -145,7 +145,7 @@ class GridConvCNPEncoder(nn.Module):
         self.conv = self.conv(
             y_dim,
             y_dim,
-            kernel_size=kernel_size,
+            kernel_size=conv_kernel_size,
             groups=y_dim,
             padding="same",
             **conv_layer_kwargs,
@@ -268,7 +268,7 @@ class GridConvCNPDecoder(nn.Module):
         y_dim: int,  # should be 3 for a colour image (rgb)
         cnn_chans: List[int],
         embedded_dim: int,
-        kernel_size: int,
+        cnn_kernel_size: int,
         conv: nn.Module = nn.Conv2d,
         nonlinearity: nn.Module = nn.ReLU(),
         normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
@@ -284,7 +284,7 @@ class GridConvCNPDecoder(nn.Module):
 
         self.cnn = CNN(
             cnn_chans,
-            kernel_size,
+            cnn_kernel_size,
             conv,
             nonlinearity,
             normalisation,
@@ -299,7 +299,7 @@ class GridConvCNPDecoder(nn.Module):
     def forward(self, E: torch.Tensor) -> torch.distributions.Distribution:
         assert E.shape[0] == self.embedded_dim
         assert len(E.shape) - 1 == self.x_dim
-        F = self.cnn(E)  # shape (y_dim*2, *grid_dims)
+        F = self.cnn(E)  # shape (y_dim*2, *grid_shape)
         return self.activation(F, dim=0)
 
 
@@ -459,7 +459,8 @@ class GridConvCNP(nn.Module):
         embedded_dim: int = 64,
         cnn_chans: List[int] = [64, 64],
         conv: nn.Module = nn.Conv2d,
-        kernel_size: int = 8,
+        cnn_kernel_size: int = 5,
+        conv_kernel_size: int = 9,
         nonlinearity: nn.Module = nn.ReLU(),
         **conv_layer_kwargs,
     ):
@@ -473,7 +474,7 @@ class GridConvCNP(nn.Module):
             x_dim,  # should be 2 for an image
             y_dim,  # should be 3 for a colour image (rgb)
             embedded_dim,
-            kernel_size,
+            conv_kernel_size,
             conv=conv,
             **conv_layer_kwargs,
         )
@@ -483,7 +484,7 @@ class GridConvCNP(nn.Module):
             y_dim,  # should be 3 for a colour image (rgb)
             cnn_chans,
             embedded_dim,
-            kernel_size,
+            cnn_kernel_size,
             conv=conv,
             nonlinearity=nonlinearity,
             normalisation=nn.Identity,  # nn.BatchNorm1d

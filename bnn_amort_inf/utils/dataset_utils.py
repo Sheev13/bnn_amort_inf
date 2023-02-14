@@ -92,6 +92,7 @@ def vis_ctxt_img(mask: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
     assert len(image.shape) == 3
     assert image.shape[0] == 1  # greyscale
 
+    mask = mask.bool()
     image = torch.cat((image, image, image), dim=0)
     blue = torch.cat(
         (
