@@ -136,7 +136,6 @@ class GridConvCNPEncoder(nn.Module):
         embedded_dim: int,
         conv_kernel_size: int,
         conv: nn.Module = nn.Conv2d,
-        **conv_layer_kwargs,
     ):
         super().__init__()
 
@@ -148,7 +147,6 @@ class GridConvCNPEncoder(nn.Module):
             kernel_size=conv_kernel_size,
             groups=y_dim,
             padding="same",
-            **conv_layer_kwargs,
         )  # (y_dim)
 
         self.resizer = nn.Sequential(nn.Linear(y_dim * 2, embedded_dim))
@@ -271,9 +269,8 @@ class GridConvCNPDecoder(nn.Module):
         cnn_kernel_size: int,
         conv: nn.Module = nn.Conv2d,
         nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
         activation: nn.Module = NormalActivation(),
-        **conv_layer_kwargs,
+        res: bool = False,
     ):
         super().__init__()
 
@@ -287,8 +284,7 @@ class GridConvCNPDecoder(nn.Module):
             cnn_kernel_size,
             conv,
             nonlinearity,
-            normalisation,
-            **conv_layer_kwargs,
+            res,
         )
 
         self.embedded_dim = embedded_dim
@@ -459,16 +455,18 @@ class GridConvCNP(nn.Module):
         embedded_dim: int = 64,
         cnn_chans: List[int] = [64, 64],
         conv: nn.Module = nn.Conv2d,
-        cnn_kernel_size: int = 5,
-        conv_kernel_size: int = 9,
+        cnn_kernel_size: int = 3,
+        conv_kernel_size: int = 3,
         nonlinearity: nn.Module = nn.ReLU(),
-        **conv_layer_kwargs,
+        res: bool = False,
+        target_only_loss: bool = False,
     ):
         super().__init__()
 
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.nonlinearity = nonlinearity
+        self.target_only_loss = target_only_loss
 
         self.encoder = GridConvCNPEncoder(
             x_dim,  # should be 2 for an image
@@ -476,7 +474,6 @@ class GridConvCNP(nn.Module):
             embedded_dim,
             conv_kernel_size,
             conv=conv,
-            **conv_layer_kwargs,
         )
 
         self.decoder = GridConvCNPDecoder(
@@ -487,9 +484,8 @@ class GridConvCNP(nn.Module):
             cnn_kernel_size,
             conv=conv,
             nonlinearity=nonlinearity,
-            normalisation=nn.Identity,  # nn.BatchNorm1d
             activation=NormalActivation(),
-            **conv_layer_kwargs,
+            res=res,
         )
 
     def forward(
@@ -502,6 +498,10 @@ class GridConvCNP(nn.Module):
         self, I: torch.Tensor, M_c: torch.Tensor
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         dist = self.forward(I, M_c)
-        ll = dist.log_prob(I).sum()
+        if self.target_only_loss:
+            M_t = (~(M_c.bool())).double()
+            ll = (M_t * dist.log_prob(I)).sum()
+        else:
+            ll = dist.log_prob(I).sum()
         metrics = {"ll": ll.item()}
         return (-ll / torch.numel(M_c)), metrics

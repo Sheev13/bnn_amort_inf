@@ -29,6 +29,50 @@ class MLP(nn.Module):
         return self.net(x)
 
 
+class ConvBlock(nn.Module):
+    def __init__(
+        self,
+        in_chan: int,
+        out_chan: int,
+        conv: nn.Module,
+        kernel_size: int,
+        nonlinearity: nn.Module = nn.ReLU(),
+    ):
+        super().__init__()
+        self.nonlinearity = nonlinearity
+
+        self.conv = conv(in_chan, out_chan, kernel_size, padding="same")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv(self.nonlinearity(x))
+
+
+class ResConvBlock(nn.Module):
+    def __init__(
+        self,
+        in_chan: int,
+        out_chan: int,
+        conv: nn.Module,
+        kernel_size: int,
+        nonlinearity: nn.Module = nn.ReLU(),
+    ):
+        super().__init__()
+        self.nonlinearity = nonlinearity
+
+        self.conv_depthwise = conv(
+            in_chan, out_chan, kernel_size, padding="same", groups=in_chan
+        )
+
+        self.conv_pointwise = conv(in_chan, out_chan, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        F = self.conv_depthwise(self.nonlinearity(x))
+        F = F + x
+        return self.conv_pointwise(
+            self.nonlinearity(F)
+        )  # might need F.contiguous() here
+
+
 class CNN(nn.Module):
     def __init__(
         self,
@@ -36,32 +80,38 @@ class CNN(nn.Module):
         kernel_size: int,
         conv: nn.Module = nn.Conv1d,
         nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # e.g. nn.BatchNorm1d
-        **conv_layer_kwargs,
+        res: bool = False,
     ):
         super().__init__()
 
-        padding = "same"
+        if res:
+            conv_block = ResConvBlock
+        else:
+            conv_block = ConvBlock
 
         net = []
         for i in range(len(chans) - 1):
-            net.append(normalisation(chans[i]))
+            if chans[i] > chans[i + 1]:
+                conv_block = (
+                    ConvBlock  # hacky workaround for groups needing to divide out_chans
+                )
             net.append(
-                conv(
+                conv_block(
                     chans[i],
                     chans[i + 1],
+                    conv,
                     kernel_size,
-                    padding=padding,
-                    **conv_layer_kwargs,
+                    nonlinearity,
                 )
             )
-            if i < len(chans) - 2:
-                net.append(nonlinearity)
 
         self.net = nn.Sequential(*net)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+# class Unet(CNN) #TODO
 
 
 class SetConv(nn.Module):
