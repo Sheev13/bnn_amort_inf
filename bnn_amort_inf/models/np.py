@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from ..utils.activations import NormalActivation
-from ..utils.networks import CNN, MLP, SetConv
+from ..utils.networks import CNN, MLP, SetConv, Unet
 
 
 def make_abs_conv(Conv):
@@ -264,28 +264,44 @@ class GridConvCNPDecoder(nn.Module):
         self,
         x_dim: int,  # should be 2 for an image
         y_dim: int,  # should be 3 for a colour image (rgb)
-        cnn_chans: List[int],
-        embedded_dim: int,
-        cnn_kernel_size: int,
+        cnn_chans: List[int] = [128, 128, 128],
+        embedded_dim: int = 128,
+        cnn_kernel_size: int = 3,
         conv: nn.Module = nn.Conv2d,
         nonlinearity: nn.Module = nn.ReLU(),
         activation: nn.Module = NormalActivation(),
         res: bool = False,
+        unet: bool = False,
+        num_u_layers: int = 6,
+        starting_chans: int = 16,
+        pool: str = "max",
     ):
         super().__init__()
 
-        if cnn_chans[-1] != 2 * y_dim:
-            cnn_chans.append(2 * y_dim)  # output channels for mu and sigma
+        if unet:
+            chans = [embedded_dim, 2 * y_dim]
+            self.cnn = Unet(
+                chans,
+                num_u_layers,
+                starting_chans,
+                cnn_kernel_size,
+                conv,
+                pool,
+                nonlinearity,
+            )
+        else:
+            if cnn_chans[-1] != 2 * y_dim:
+                cnn_chans.append(2 * y_dim)  # output channels for mu and sigma
 
-        cnn_chans = [embedded_dim] + cnn_chans
+            cnn_chans = [embedded_dim] + cnn_chans
 
-        self.cnn = CNN(
-            cnn_chans,
-            cnn_kernel_size,
-            conv,
-            nonlinearity,
-            res,
-        )
+            self.cnn = CNN(
+                cnn_chans,
+                cnn_kernel_size,
+                conv,
+                nonlinearity,
+                res,
+            )
 
         self.embedded_dim = embedded_dim
         self.x_dim = x_dim
@@ -460,6 +476,10 @@ class GridConvCNP(nn.Module):
         nonlinearity: nn.Module = nn.ReLU(),
         res: bool = False,
         target_only_loss: bool = False,
+        unet: bool = False,
+        num_unet_layers: int = 6,
+        unet_starting_chans: int = 16,
+        pool: str = "max",
     ):
         super().__init__()
 
@@ -479,13 +499,17 @@ class GridConvCNP(nn.Module):
         self.decoder = GridConvCNPDecoder(
             x_dim,  # should be 2 for an image
             y_dim,  # should be 3 for a colour image (rgb)
-            cnn_chans,
-            embedded_dim,
-            cnn_kernel_size,
+            cnn_chans=cnn_chans,
+            embedded_dim=embedded_dim,
+            cnn_kernel_size=cnn_kernel_size,
             conv=conv,
             nonlinearity=nonlinearity,
             activation=NormalActivation(),
             res=res,
+            unet=unet,
+            num_u_layers=num_unet_layers,
+            starting_chans=unet_starting_chans,
+            pool=pool,
         )
 
     def forward(

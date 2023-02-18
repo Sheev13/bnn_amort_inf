@@ -2,6 +2,7 @@ from typing import List
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 
 class MLP(nn.Module):
@@ -111,7 +112,96 @@ class CNN(nn.Module):
         return self.net(x)
 
 
-# class Unet(CNN) #TODO
+class Unet(nn.Module):
+    def __init__(
+        self,
+        chans: List[int],  # channels for first and last blocks
+        num_u_layers: int,
+        starting_chans: int,  # number of channels in first layer
+        kernel_size: int,
+        conv: nn.Module = nn.Conv2d,
+        pool: str = "max",
+        nonlinearity: nn.Module = nn.ReLU(),
+    ):
+        super().__init__()
+
+        assert pool in ["max", "avg"]
+        dim = [nn.Conv1d, nn.Conv2d, nn.Conv3d].index(conv) + 1
+        pools = {
+            "max": [nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d],
+            "avg": [nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d],
+        }
+        self.pool = pools[pool][dim - 1](2)  # use pooling size of 2
+
+        upsamp_modes = ["linear", "bilinear", "trilinear"]
+        self.upsamp_mode = upsamp_modes[dim - 1]
+
+        assert len(chans) == 2
+        in_chans, out_chans = chans
+
+        assert num_u_layers % 2 == 0
+        self.num_u_blocks = num_u_layers - 1
+        chans = [starting_chans * 2**i for i in range(num_u_layers // 2)]
+        self.u_chans = chans + chans[::-1]
+
+        self.in_block = ConvBlock(
+            in_chans,
+            starting_chans,
+            conv,
+            kernel_size,
+            nonlinearity,
+        )
+
+        self.u_blocks = []
+        for i in range(self.num_u_blocks):
+            double = int(i > self.num_u_blocks // 2)
+            self.u_blocks.append(
+                ConvBlock(
+                    self.u_chans[i] * 2**double,
+                    self.u_chans[i + 1],
+                    conv,
+                    kernel_size,
+                    nonlinearity,
+                )
+            )
+
+        self.out_block = ConvBlock(
+            starting_chans, out_chans, conv, kernel_size, nonlinearity
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x = self.in_block(x)
+
+        half_u_blocks = self.num_u_blocks // 2
+        residuals = [None] * (half_u_blocks)
+        # Down
+        for i in range(half_u_blocks):
+            x = self.u_blocks[i](x)
+            residuals[i] = x
+            x = self.pool(x)
+
+        # Bottleneck
+        x = self.u_blocks[half_u_blocks](x)
+        # # Representation before forcing same bottleneck
+        # representation = X.view(*x.shape[:2], -1).mean(-1)
+
+        # Up
+        for i in range((half_u_blocks) + 1, self.num_u_blocks):
+            x = F.interpolate(
+                x.unsqueeze(0),
+                mode=self.upsamp_mode,
+                scale_factor=2,
+                align_corners=True,
+            ).squeeze(0)
+            x = torch.cat(
+                (x, residuals[half_u_blocks - i]), dim=0
+            )  # concat on channels
+            x = self.u_blocks[i](x)
+
+        x = self.out_block(x)
+
+        return x
 
 
 class SetConv(nn.Module):
