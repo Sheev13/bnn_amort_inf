@@ -105,3 +105,29 @@ def vis_ctxt_img(mask: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
     image = torch.where(mask, image, blue)
 
     return image.permute(1, 2, 0)  # permutation needed for matplotlib
+
+
+def img_for_reg(
+    I: torch.Tensor, M_c: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    num_x1, num_x2 = I.shape[-2:]
+    num_pix = num_x1 * num_x2
+    x1_range = torch.linspace(-1, 1, num_x1)
+    x2_range = torch.linspace(-1, 1, num_x2)
+    xm1, xm2 = torch.meshgrid(x1_range, x2_range, indexing="xy")
+    x1 = xm1.reshape((num_pix))
+    x2 = xm2.reshape((num_pix))
+    x_t = torch.cat((x1.unsqueeze(-1), x2.unsqueeze(-1)), dim=-1)
+    y_t = I.reshape((I.shape[0], num_pix))
+    flat_mc = M_c.reshape((num_pix))
+    x_c = x_t[flat_mc.bool()]
+    y_c = y_t[:, flat_mc.bool()]
+    return x_c, y_c.T, x_t, y_t.T
+
+
+def samps_to_img_dist(preds: torch.Tensor, img_shape=(28, 28, 1)):
+    preds = preds.detach()
+    mean, std = preds.mean(0), preds.std(0)
+    pred_img = mean.reshape(img_shape)
+    pred_std = std.reshape(img_shape)
+    return pred_img.numpy(), pred_std.numpy()

@@ -169,9 +169,9 @@ class GridConvCNPEncoder(nn.Module):
         density = self.conv(M_c)
         F = F / torch.clamp(density, min=1e-8)  # normalise
         F = torch.cat([F, density], dim=0)  # shape (y_dim*2, *grid_shape)
-        F = self.resizer(F.permute(1, 2, 0)).permute(
-            2, 0, 1
-        )  # shape (embedded_dim, *grid_shape)
+        # F = self.resizer(F.permute(1, 2, 0)).permute(
+        #     2, 0, 1
+        # )  # shape (embedded_dim, *grid_shape)
 
         return F
 
@@ -279,9 +279,8 @@ class GridConvCNPDecoder(nn.Module):
         super().__init__()
 
         if unet:
-            chans = [embedded_dim, 2 * y_dim]
             self.cnn = Unet(
-                chans,
+                embedded_dim,
                 num_u_layers,
                 starting_chans,
                 cnn_kernel_size,
@@ -290,8 +289,6 @@ class GridConvCNPDecoder(nn.Module):
                 nonlinearity,
             )
         else:
-            if cnn_chans[-1] != 2 * y_dim:
-                cnn_chans.append(2 * y_dim)  # output channels for mu and sigma
 
             cnn_chans = [embedded_dim] + cnn_chans
 
@@ -303,6 +300,15 @@ class GridConvCNPDecoder(nn.Module):
                 res,
             )
 
+        if unet:
+            in_dim = starting_chans
+        else:
+            in_dim = cnn_chans[-1]
+        self.mlp = MLP(
+            [in_dim] + [128] + [y_dim * 2],
+            nonlinearity=nonlinearity,
+        )
+
         self.embedded_dim = embedded_dim
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -311,7 +317,13 @@ class GridConvCNPDecoder(nn.Module):
     def forward(self, E: torch.Tensor) -> torch.distributions.Distribution:
         assert E.shape[0] == self.embedded_dim
         assert len(E.shape) - 1 == self.x_dim
-        F = self.cnn(E)  # shape (y_dim*2, *grid_shape)
+        # E is shape (embedded_dim, *grid_shape)
+        F = self.cnn(
+            E
+        )  # shape (cnn_chans[-1], *grid_shape). if unet, cnn_chans[-1] == starting_chans
+        F = self.mlp(F.permute(1, 2, 0)).permute(
+            2, 0, 1
+        )  # shape (y_dim * 2, *grid_shape)
         return self.activation(F, dim=0)
 
 

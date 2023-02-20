@@ -61,7 +61,7 @@ class ResConvBlock(nn.Module):
         self.nonlinearity = nonlinearity
 
         self.conv_depthwise = conv(
-            in_chan, out_chan, kernel_size, padding="same", groups=in_chan
+            in_chan, in_chan, kernel_size, padding="same", groups=in_chan
         )
 
         self.conv_pointwise = conv(in_chan, out_chan, 1)
@@ -92,10 +92,10 @@ class CNN(nn.Module):
 
         net = []
         for i in range(len(chans) - 1):
-            if chans[i] > chans[i + 1]:
-                conv_block = (
-                    ConvBlock  # hacky workaround for groups needing to divide out_chans
-                )
+            # if chans[i] != chans[i + 1]:
+            #     conv_block = (
+            #         ConvBlock
+            #     )
             net.append(
                 conv_block(
                     chans[i],
@@ -105,6 +105,8 @@ class CNN(nn.Module):
                     nonlinearity,
                 )
             )
+            # if res:
+            #     conv_block = ResConvBlock
 
         self.net = nn.Sequential(*net)
 
@@ -115,7 +117,7 @@ class CNN(nn.Module):
 class Unet(nn.Module):
     def __init__(
         self,
-        chans: List[int],  # channels for first and last blocks
+        in_chans: int,  # channels for first block
         num_u_layers: int,
         starting_chans: int,  # number of channels in first layer
         kernel_size: int,
@@ -135,9 +137,6 @@ class Unet(nn.Module):
 
         upsamp_modes = ["linear", "bilinear", "trilinear"]
         self.upsamp_mode = upsamp_modes[dim - 1]
-
-        assert len(chans) == 2
-        in_chans, out_chans = chans
 
         assert num_u_layers % 2 == 0
         self.num_u_blocks = num_u_layers - 1
@@ -165,10 +164,6 @@ class Unet(nn.Module):
                 )
             )
 
-        self.out_block = ConvBlock(
-            starting_chans, out_chans, conv, kernel_size, nonlinearity
-        )
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
 
         x = self.in_block(x)
@@ -183,8 +178,6 @@ class Unet(nn.Module):
 
         # Bottleneck
         x = self.u_blocks[half_u_blocks](x)
-        # # Representation before forcing same bottleneck
-        # representation = X.view(*x.shape[:2], -1).mean(-1)
 
         # Up
         for i in range((half_u_blocks) + 1, self.num_u_blocks):
@@ -198,8 +191,6 @@ class Unet(nn.Module):
                 (x, residuals[half_u_blocks - i]), dim=0
             )  # concat on channels
             x = self.u_blocks[i](x)
-
-        x = self.out_block(x)
 
         return x
 

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import gpytorch
 import torch
@@ -25,7 +25,8 @@ def train_metamodel(
     smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
     gridconv: bool = False,
-    man_thresh: Optional[int] = None,
+    image: bool = False,
+    man_thresh: Optional[Tuple[str, float]] = None,
 ) -> Dict[str, List[Any]]:
 
     assert ref_es_iters < min_es_iters
@@ -46,15 +47,26 @@ def train_metamodel(
             batch_size
         ):  # reimplement this to be vectorised (introduce batch dimensionality)
 
-            if gridconv:
+            if image:
                 try:
-                    (I, M_c) = next(dataset_iterator)
+                    (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
                 except StopIteration:
                     dataset_iterator = iter(dataloader)
-                    (I, M_c) = next(dataset_iterator)
+                    (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
                 I, M_c = I.squeeze(0), M_c.squeeze(0)
+                x_c, y_c, x_t, y_t = (
+                    x_c.squeeze(0),
+                    y_c.squeeze(0),
+                    x_t.squeeze(0),
+                    y_t.squeeze(0),
+                )
                 assert len(I.shape) == 3
-                loss, metrics = model.loss(I, M_c)
+                if gridconv:
+                    loss, metrics = model.loss(I, M_c)
+                elif np_loss:
+                    loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+                else:
+                    loss, metrics = model.loss(x_c, y_c)
 
             else:
                 try:
