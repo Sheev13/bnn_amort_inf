@@ -112,6 +112,7 @@ class AmortisedGIBNN(BaseBNN):
         in_nonlinearity: nn.Module = nn.ReLU(),
         noise: float = 1.0,
         train_noise: bool = False,
+        np_kl: bool = True,
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
 
@@ -142,6 +143,8 @@ class AmortisedGIBNN(BaseBNN):
                 pw=pws[-1],
             )
         )
+
+        self.np_kl = np_kl
 
     def forward(  # pylint: disable=arguments-differ
         self,
@@ -239,23 +242,26 @@ class AmortisedGIBNN(BaseBNN):
 
         # np_kl_total = KL(q(W|D)||q(W|D_c))
         np_kl_total = None
-        for layer in self.layers:
-            qw_c = layer.cache["qw_c"]
-            qw_u = layer.cache["qw_u"]
+        if self.np_kl:
+            for layer in self.layers:
+                qw_c = layer.cache["qw_c"]
+                qw_u = layer.cache["qw_u"]
 
-            np_kl = torch.distributions.kl.kl_divergence(qw_u, qw_c).sum(-1)
+                np_kl = torch.distributions.kl.kl_divergence(qw_u, qw_c).sum(-1)
 
-            if np_kl_total is None:
-                np_kl_total = np_kl
-            else:
-                np_kl_total += np_kl
+                if np_kl_total is None:
+                    np_kl_total = np_kl
+                else:
+                    np_kl_total += np_kl
 
+        if np_kl_total is None:
+            np_kl_total = torch.tensor(0.0).unsqueeze(0)
         exp_ll_t = self.exp_ll(F_t_u, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
         np_kl_total = np_kl_total.mean(0)
         loss = exp_ll_t - np_kl_total
 
         metrics = {
-            "loss": loss.item(),
+            "elbo": loss.item(),
             "exp_ll_t": exp_ll_t.item(),
             "np_kl": np_kl_total.item(),
             "noise": self.noise.item(),

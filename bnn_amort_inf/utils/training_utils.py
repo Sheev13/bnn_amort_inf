@@ -64,7 +64,7 @@ def train_metamodel(
                 if gridconv:
                     loss, metrics = model.loss(I, M_c)
                 elif np_loss:
-                    loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t)
                 else:
                     loss, metrics = model.loss(x_c, y_c)
 
@@ -115,8 +115,8 @@ def train_metamodel(
                 and man_thresh is None
             ):
                 break
-        if man_thresh is not None:
-            if batch_metrics["ll"] > man_thresh:
+        if man_thresh is not None and es:
+            if batch_metrics[man_thresh[0]] > man_thresh[1]:
                 break
 
     return tracker
