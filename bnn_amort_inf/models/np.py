@@ -92,7 +92,10 @@ class ConvCNPEncoder(nn.Module):
         )
 
         self.set_conv = SetConv(
-            x_dim, embedded_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            x_dim,
+            embedded_dim,
+            train_lengthscale=True,
+            lengthscale=0.1 * granularity,
         )
 
         self.x_dim = x_dim
@@ -233,11 +236,11 @@ class ConvCNPDecoder(nn.Module):
         self.y_dim = y_dim
 
         self.mean_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=2.0 / granularity
+            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
         )
 
         self.log_sigma_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=2.0 / granularity
+            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
         )
 
     def forward(
