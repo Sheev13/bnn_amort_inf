@@ -141,3 +141,7 @@ dmypy.json
 
 notebooks/examples/data/
 notebooks/data
+
+npf
+
+npf_requirements.txt
