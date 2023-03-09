@@ -2,7 +2,6 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import gpytorch
-import neuralprocesses as nps
 import torch
 from tqdm import tqdm
 
@@ -28,7 +27,6 @@ def train_metamodel(
     gridconv: bool = False,
     image: bool = False,
     man_thresh: Optional[Tuple[str, float]] = None,
-    nps_model: Optional[bool] = False,
 ) -> Dict[str, List[Any]]:
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
@@ -40,10 +38,7 @@ def train_metamodel(
     tracker = defaultdict(list)
     iter_tqdm = tqdm(range(max_iters), desc="iters")
     for iter_idx in iter_tqdm:
-        if nps_model:
-            opt.zero_grad(set_to_none=True)
-        else:
-            opt.zero_grad()
+        opt.zero_grad()
         batch_loss = torch.tensor(0.0)
         batch_metrics: Dict = defaultdict(float)
         for _ in range(
@@ -77,21 +72,12 @@ def train_metamodel(
                     dataset_iterator = iter(dataloader)
                     (x, y) = next(dataset_iterator)
                 x, y = x.squeeze(0), y.squeeze(0)
-                if neural_process or np_loss or nps_model:
+                if neural_process or np_loss:
                     # Randomly sample context and target points.
                     (x_c, y_c), (x_t, y_t) = context_target_split(
                         x, y, min_context, max_context
                     )
-                    if nps_model:
-                        x_c, y_c, x_t, y_t = (
-                            x_c.T.unsqueeze(0),
-                            y_c.T.unsqueeze(0),
-                            x_t.T.unsqueeze(0),
-                            y_t.T.unsqueeze(0),
-                        )
-                        loss = -torch.mean(nps.loglik(model, x_c, y_c, x_t, y_t))
-                        metrics = {"ll": loss.item()}
-                    elif np_loss:
+                    if np_loss:
                         loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
                     else:
                         loss, metrics = model.loss(x_c, y_c, x_t, y_t)
