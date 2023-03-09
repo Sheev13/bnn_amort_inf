@@ -9,6 +9,12 @@ from ...utils.networks import MLP
 from .bnn_layers import BaseBNNLayer
 
 
+def _precision_to_scale_tril(prec: torch.Tensor):
+    Lf = torch.linalg.cholesky(torch.flip(prec, (-1, -2)))
+    L = torch.inverse(torch.transpose(torch.flip(Lf, (-1, -2)), -1, -2))
+    return L.tril()
+
+
 class GIBNNLayer(BaseBNNLayer, ABC):
     """Represents a single layer of a GI-BNN."""
 
@@ -49,14 +55,18 @@ class GIBNNLayer(BaseBNNLayer, ABC):
         prior_prec_ = (self.pw.scale ** (-2)).diag_embed().unsqueeze(0)
 
         q_prec = prior_prec_ + UTLU
+        q_chol = _precision_to_scale_tril(q_prec)
+        q_cov = q_chol @ q_chol.transpose(-1, -2)
 
-        q_prec_chol = torch.linalg.cholesky(q_prec)
-        q_cov = torch.cholesky_inverse(q_prec_chol)
+        # q_prec_chol = torch.linalg.cholesky(q_prec)
+        # q_cov = torch.cholesky_inverse(q_prec_chol)
         q_mu = (q_cov @ UTLv).squeeze(-1)
-        return torch.distributions.MultivariateNormal(q_mu, q_cov)
+        return torch.distributions.MultivariateNormal(q_mu, scale_tril=q_chol)
+        # return torch.distributions.MultivariateNormal(q_mu, q_cov)
+        # return torch.distributions.MultivariateNormal(q_mu, precision_matrix=q_prec)
 
     def forward(
-        self, U: torch.Tensor, data: Optional[str] = None, *args, **kwargs
+        self, U: torch.Tensor, *args, data: Optional[str] = None, **kwargs
     ):  # pylint: disable=arguments-differ
         """Computes q(w) and stores in cache."""
         pseudo_likelihood = self.pseudo_likelihood(*args, **kwargs)

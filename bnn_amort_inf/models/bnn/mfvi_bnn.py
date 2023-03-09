@@ -1,10 +1,11 @@
-from typing import List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
 from ...utils.activations import NormalActivation
 from ...utils.networks import MLP
+from ..likelihoods.normal import NormalLikelihood
 from .bnn import BaseBNN
 from .bnn_layers import BaseBNNLayer
 
@@ -94,10 +95,9 @@ class AmortisedMFVIBNN(BaseBNN):
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
         in_nonlinearity: nn.Module = nn.ReLU(),
-        noise: float = 1.0,
-        train_noise: bool = False,
+        likelihood: Callable = NormalLikelihood(noise=1.0),
     ):
-        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
+        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
         dims = [x_dim] + hidden_dims + [y_dim]
         if pws is None:
@@ -139,7 +139,6 @@ class AmortisedMFVIBNN(BaseBNN):
         x_test: Optional[torch.Tensor] = None,
         num_samples: int = 1,
     ) -> Tuple[torch.Tensor, torch.Tensor, Union[torch.Tensor, None]]:
-
         assert len(x.shape) == len(y.shape) == 2
         assert x.shape[-1] == self.x_dim
         assert y.shape[-1] == self.y_dim

@@ -1,8 +1,9 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 
+from ..likelihoods.normal import NormalLikelihood
 from .bnn import BaseBNN
 from .gibnn_layers import AmortisedGIBNNLayer, FinalGIBNNLayer, FreeFormGIBNNLayer
 
@@ -19,10 +20,9 @@ class GIBNN(BaseBNN):
         inducing_points: Optional[torch.Tensor] = None,
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
-        noise: float = 1.0,
-        train_noise: bool = False,
+        likelihood: Callable = NormalLikelihood(noise=1.0),
     ):
-        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
+        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
         self.num_inducing = num_inducing
 
@@ -55,7 +55,6 @@ class GIBNN(BaseBNN):
         x: torch.Tensor,
         num_samples: int = 1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-
         assert len(x.shape) == 2
         assert x.shape[-1] == self.x_dim
 
@@ -110,11 +109,10 @@ class AmortisedGIBNN(BaseBNN):
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
         in_nonlinearity: nn.Module = nn.ReLU(),
-        noise: float = 1.0,
-        train_noise: bool = False,
+        likelihood: Callable = NormalLikelihood(noise=1.0),
         np_kl: bool = True,
     ):
-        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, noise, train_noise)
+        super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
         dims = [x_dim] + hidden_dims + [y_dim]
         if pws is None:
@@ -136,13 +134,27 @@ class AmortisedGIBNN(BaseBNN):
                     pw=pws[i],
                 )
             )
-        self.layers.append(
-            FinalGIBNNLayer(
-                dims[-2] + 1,
-                dims[-1],
-                pw=pws[-1],
+
+        if hasattr(likelihood, "noise"):
+            self.layers.append(
+                FinalGIBNNLayer(
+                    dims[-2] + 1,
+                    dims[-1],
+                    pw=pws[-1],
+                )
             )
-        )
+        else:
+            self.layers.append(
+                AmortisedGIBNNLayer(
+                    x_dim,
+                    y_dim,
+                    dims[-2] + 1,
+                    dims[-1],
+                    in_hidden_dims=in_hidden_dims,
+                    in_nonlinearity=in_nonlinearity,
+                    pw=pws[-1],
+                )
+            )
 
         self.np_kl = np_kl
 
@@ -155,7 +167,8 @@ class AmortisedGIBNN(BaseBNN):
         data: Optional[
             str
         ] = None,  # not None if np loss in use. Specifies if context or union dataset
-    ) -> Tuple[torch.Tensor, torch.Tensor, Union[torch.Tensor, None]]:
+        compute_kl: bool = True,
+    ) -> Tuple[torch.Tensor, Union[torch.Tensor, None], Union[torch.Tensor, None]]:
         assert len(x.shape) == 2
         assert len(y.shape) == 2
         assert x.shape[-1] == self.x_dim
@@ -176,13 +189,9 @@ class AmortisedGIBNN(BaseBNN):
             F_ones = torch.ones(F.shape[:-1]).unsqueeze(-1)
             F = torch.cat((F, F_ones), dim=-1)
 
-            if F_test is not None:
-                F_test_ones = torch.ones(F_test.shape[:-1]).unsqueeze(-1)
-                F_test = torch.cat((F_test, F_test_ones), dim=-1)
-
             # Sample GIBNNLayer.
-            if i == (len(self.layers) - 1):
-                layer(U=F, data=data, y=y, noise=self.noise)
+            if i == (len(self.layers) - 1) and hasattr(self.likelihood, "noise"):
+                layer(U=F, data=data, y=y, noise=self.likelihood.noise)
             else:
                 layer(U=F, data=data, x=x, y=y)
 
@@ -194,11 +203,17 @@ class AmortisedGIBNN(BaseBNN):
             # (num_samples, output_dim, input_dim).
             w = qw.rsample()
 
-            # (num_samples).
-            mv_pw = torch.distributions.MultivariateNormal(
-                layer.pw.loc, layer.pw.scale.pow(2).diag_embed()
-            )
-            kl = torch.distributions.kl.kl_divergence(qw, mv_pw).sum(-1)
+            if compute_kl:
+                # (num_samples).
+                mv_pw = torch.distributions.MultivariateNormal(
+                    layer.pw.loc, layer.pw.scale.pow(2).diag_embed()
+                )
+                kl = torch.distributions.kl.kl_divergence(qw, mv_pw).sum(-1)
+
+                if kl_total is None:
+                    kl_total = kl
+                else:
+                    kl_total += kl
 
             # (num_samples, batch_size, output_dim).
             F = F @ w.transpose(-1, -2)
@@ -206,14 +221,11 @@ class AmortisedGIBNN(BaseBNN):
                 F = self.nonlinearity(F)
 
             if F_test is not None:
+                F_test_ones = torch.ones(F_test.shape[:-1]).unsqueeze(-1)
+                F_test = torch.cat((F_test, F_test_ones), dim=-1)
                 F_test = F_test @ w.transpose(-1, -2)
                 if i < len(self.layers) - 1:
                     F_test = self.nonlinearity(F_test)
-
-            if kl_total is None:
-                kl_total = kl
-            else:
-                kl_total += kl
 
         return F, kl_total, F_test
 
@@ -234,10 +246,12 @@ class AmortisedGIBNN(BaseBNN):
         assert x_t.shape[-1] == self.x_dim
         assert y_t.shape[-1] == self.y_dim
 
-        x = torch.cat((x_c, x_t), dim=0)
-        y = torch.cat((y_c, y_t), dim=0)
+        # x = torch.cat((x_c, x_t), dim=0)
+        # y = torch.cat((y_c, y_t), dim=0)
 
-        F_t_u = self(x, y, x_test=x_t, num_samples=num_samples, data="u")[2]
+        # F_t_u = self(
+        #     x, y, x_test=x_t, num_samples=num_samples, data="u", compute_kl=False
+        # )[2]
         F_t_c = self(x_c, y_c, x_test=x_t, num_samples=num_samples, data="c")[2]
 
         # np_kl_total = KL(q(W|D)||q(W|D_c))
@@ -256,7 +270,13 @@ class AmortisedGIBNN(BaseBNN):
 
         if np_kl_total is None:
             np_kl_total = torch.tensor(0.0).unsqueeze(0)
-        exp_ll_t = self.exp_ll(F_t_u, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
+
+        # exp_ll_t = self.exp_ll(F_t_c, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
+        qy_t = self.likelihood(F_t_c)
+        exp_ll_t = (
+            qy_t.log_prob(y_t.unsqueeze(0).repeat(num_samples, 1, 1)).sum()
+            / num_samples
+        )
         np_kl_total = np_kl_total.mean(0)
         loss = exp_ll_t - np_kl_total
 
@@ -264,7 +284,6 @@ class AmortisedGIBNN(BaseBNN):
             "elbo": loss.item(),
             "exp_ll_t": exp_ll_t.item(),
             "np_kl": np_kl_total.item(),
-            "noise": self.noise.item(),
         }
 
         return (-loss / x_t.shape[0]), metrics

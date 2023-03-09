@@ -1,8 +1,10 @@
 from abc import ABC
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import torch
 from torch import nn
+
+from ..likelihoods.normal import NormalLikelihood
 
 
 class BaseBNN(nn.Module, ABC):
@@ -14,8 +16,7 @@ class BaseBNN(nn.Module, ABC):
         y_dim: int,
         hidden_dims: List[int],
         nonlinearity: nn.Module = nn.ReLU(),
-        noise: float = 1.0,
-        train_noise: bool = False,
+        likelihood: Callable = NormalLikelihood(noise=1.0),
     ):
         super().__init__()
 
@@ -23,26 +24,7 @@ class BaseBNN(nn.Module, ABC):
         self.y_dim = y_dim
         self.hidden_dims = hidden_dims
         self.nonlinearity = nonlinearity
-
-        # Observation noise.
-        self.log_noise = nn.Parameter(
-            torch.tensor(noise).log(), requires_grad=train_noise
-        )
-
-    @property
-    def noise(self):
-        return self.log_noise.exp()
-
-    def exp_ll(self, F: torch.Tensor, y: torch.Tensor):
-        assert len(y.shape) == 2
-        assert y.shape[-1] == self.y_dim
-
-        y = y.unsqueeze(0).repeat(F.shape[0], 1, 1)
-        assert y.shape == F.shape
-
-        # (num_samples, N, output_dim)
-        log_probs = torch.distributions.normal.Normal(F, self.noise).log_prob(y)
-        return log_probs.sum(-1).sum(-1)
+        self.likelihood = likelihood
 
     def elbo(
         self, x: torch.Tensor, y: torch.Tensor, num_samples: int = 1
@@ -52,7 +34,10 @@ class BaseBNN(nn.Module, ABC):
         else:
             F, kl = self(x, num_samples=num_samples)[:2]
 
-        exp_ll = self.exp_ll(F, y).mean(0)
+        qy = self.likelihood(F)
+        exp_ll = (
+            qy.log_prob(y.unsqueeze(0).repeat(num_samples, 1, 1)).sum() / num_samples
+        )
         kl = kl.mean(0)
         elbo = exp_ll - kl
 
@@ -60,7 +45,7 @@ class BaseBNN(nn.Module, ABC):
             "elbo": elbo.item(),
             "exp_ll": exp_ll.item(),
             "kl": kl.item(),
-            "noise": self.noise.item(),
+            # "noise": self.noise.item(),
         }
         return elbo, metrics
 

@@ -1,1 +1,1 @@
-from . import bnn, gp, np
+from . import bnn, gp, likelihoods, np

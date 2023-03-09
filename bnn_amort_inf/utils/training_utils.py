@@ -30,7 +30,6 @@ def train_metamodel(
     man_thresh: Optional[Tuple[str, float]] = None,
     nps_model: Optional[bool] = False,
 ) -> Dict[str, List[Any]]:
-
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
 
@@ -41,7 +40,6 @@ def train_metamodel(
     tracker = defaultdict(list)
     iter_tqdm = tqdm(range(max_iters), desc="iters")
     for iter_idx in iter_tqdm:
-
         if nps_model:
             opt.zero_grad(set_to_none=True)
         else:
@@ -51,7 +49,6 @@ def train_metamodel(
         for _ in range(
             batch_size
         ):  # reimplement this to be vectorised (introduce batch dimensionality)
-
             if image:
                 try:
                     (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
@@ -148,7 +145,6 @@ def train_model(
     smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
 ) -> Dict[str, List[Any]]:
-
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
 
@@ -161,7 +157,6 @@ def train_model(
     tracker = defaultdict(list)
     iter_tqdm = tqdm(range(max_iters), desc="iters")
     for iter_idx in iter_tqdm:
-
         opt.zero_grad()
 
         try:
@@ -209,7 +204,6 @@ def train_gp(
     smooth_es_iters: int = 50,
     es_thresh: float = 1e-2,
 ) -> Dict[str, List[Any]]:
-
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
 
@@ -224,7 +218,6 @@ def train_gp(
     tracker = defaultdict(list)
     iter_tqdm = tqdm(range(max_iters), desc="iters")
     for iter_idx in iter_tqdm:
-
         opt.zero_grad()
 
         try:
