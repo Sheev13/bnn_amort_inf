@@ -1,9 +1,12 @@
+import sys
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 import gpytorch
 import torch
 from tqdm import tqdm
+
+from npf import CNPFLoss
 
 from .dataset_utils import MetaDataset, context_target_split
 
@@ -13,6 +16,7 @@ def train_metamodel(
     dataset: MetaDataset,
     neural_process: bool = False,
     np_loss: bool = False,
+    np_kl: bool = True,
     min_context: int = 3,
     max_context: int = 50,
     max_iters: int = 10_000,
@@ -27,6 +31,7 @@ def train_metamodel(
     gridconv: bool = False,
     image: bool = False,
     man_thresh: Optional[Tuple[str, float]] = None,
+    npf_model: bool = False,
 ) -> Dict[str, List[Any]]:
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
@@ -34,6 +39,9 @@ def train_metamodel(
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True)
     dataset_iterator = iter(dataloader)
+
+    if npf_model:
+        loss_object = CNPFLoss()
 
     tracker = defaultdict(list)
     iter_tqdm = tqdm(range(max_iters), desc="iters")
@@ -43,7 +51,7 @@ def train_metamodel(
         batch_metrics: Dict = defaultdict(float)
         for _ in range(
             batch_size
-        ):  # reimplement this to be vectorised (introduce batch dimensionality)
+        ):  # reimplement this to be vectorised (introduce batch dimensionality)?
             if image:
                 try:
                     (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
@@ -61,7 +69,7 @@ def train_metamodel(
                 if gridconv:
                     loss, metrics = model.loss(I, M_c)
                 elif np_loss:
-                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t)
+                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, kl=np_kl)
                 else:
                     loss, metrics = model.loss(x_c, y_c)
 
@@ -72,13 +80,23 @@ def train_metamodel(
                     dataset_iterator = iter(dataloader)
                     (x, y) = next(dataset_iterator)
                 x, y = x.squeeze(0), y.squeeze(0)
-                if neural_process or np_loss:
+                if neural_process or np_loss or npf_model:
                     # Randomly sample context and target points.
                     (x_c, y_c), (x_t, y_t) = context_target_split(
                         x, y, min_context, max_context
                     )
-                    if np_loss:
-                        loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
+                    if npf_model:
+                        preds = model(
+                            x_c.unsqueeze(0), y_c.unsqueeze(0), x_t.unsqueeze(0)
+                        )
+                        loss = loss_object.get_loss(
+                            preds[0], preds[1], preds[2], preds[3], y_t.unsqueeze(0)
+                        )[0]
+                        metrics = {"ll": -loss.item()}
+                    elif np_loss:
+                        loss, metrics = model.np_loss(
+                            x_c, y_c, x_t, y_t, num_samples, kl=np_kl
+                        )
                     else:
                         loss, metrics = model.loss(x_c, y_c, x_t, y_t)
                 else:
