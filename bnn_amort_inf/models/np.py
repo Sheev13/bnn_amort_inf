@@ -66,43 +66,23 @@ class ConvCNPEncoder(nn.Module):
         self,
         x_dim: int,
         y_dim: int,
-        cnn_chans: List[int],
         embedded_dim: int,
-        kernel_size: int,
         granularity: int,
-        conv: nn.Module = nn.Conv1d,
-        nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
-        **conv_layer_kwargs,
+        encoder_lengthscale: float = 0.1,
     ):
         super().__init__()
-
-        if cnn_chans[-1] != 2:
-            cnn_chans.append(2)  # output channels for mu and sigma
-
-        cnn_chans = [embedded_dim] + cnn_chans
-
-        self.cnn = CNN(
-            cnn_chans,
-            kernel_size,
-            conv,
-            nonlinearity,
-            normalisation,
-            **conv_layer_kwargs,
-        )
 
         self.set_conv = SetConv(
             x_dim,
             embedded_dim,
             train_lengthscale=True,
-            lengthscale=0.1 * granularity,
+            lengthscale=encoder_lengthscale,
         )
 
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.embedded_dim = embedded_dim
         self.granularity = granularity
-        self.nonlinearity = nonlinearity
 
     def forward(self, x_c, y_c, x_t):
         assert len(x_c.shape) == 2
@@ -119,12 +99,9 @@ class ConvCNPEncoder(nn.Module):
         x_grid = torch.linspace(x_min, x_max, num_points)
 
         F = self.set_conv(x_c, y_c, x_grid).permute(1, 0)
-        F = self.nonlinearity(F)
-        F = self.cnn(F.unsqueeze(0)).squeeze().permute(1, 0)
 
-        assert len(F.shape) == 2
-        assert F.shape[0] == num_points
-        assert F.shape[1] == 2
+        assert F.shape[0] == self.embedded_dim
+        assert F.shape[1] == num_points
 
         return (F, x_grid)
 
@@ -229,19 +206,42 @@ class ConvCNPDecoder(nn.Module):
         self,
         x_dim: int,
         y_dim: int,
-        granularity: int,
+        cnn_chans: List[int],
+        embedded_dim: int,
+        kernel_size: int,
+        conv: nn.Module = nn.Conv1d,
+        nonlinearity: nn.Module = nn.ReLU(),
+        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
+        decoder_lengthscale: float = 0.01,
+        **conv_layer_kwargs,
     ):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
 
+        if cnn_chans[-1] != 2:
+            cnn_chans.append(2)  # output channels for mu and sigma
+
+        cnn_chans = [embedded_dim] + cnn_chans
+
+        self.cnn = CNN(
+            cnn_chans,
+            kernel_size,
+            conv,
+            nonlinearity,
+            normalisation,
+            **conv_layer_kwargs,
+        )
+
         self.mean_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
         )
 
         self.log_sigma_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
         )
+
+        self.nonlinearity = nonlinearity
 
     def forward(
         self,
@@ -250,13 +250,18 @@ class ConvCNPDecoder(nn.Module):
     ) -> torch.distributions.Distribution:
 
         z_c, x_grid = E
+        F = self.cnn(z_c.unsqueeze(0)).squeeze().permute(1, 0)
+
+        assert len(F.shape) == 2
+        assert F.shape[1] == 2
         assert len(x_t.shape) == 2
         assert x_t.shape[1] == self.x_dim
 
-        mean = self.mean_layer(x_grid.unsqueeze(1), z_c[:, 0].unsqueeze(1), x_t)
+        mean = self.mean_layer(x_grid.unsqueeze(1), F[:, 0].unsqueeze(1), x_t)
         sigma = self.log_sigma_layer(
-            x_grid.unsqueeze(1), z_c[:, 1].unsqueeze(1), x_t
+            x_grid.unsqueeze(1), F[:, 1].unsqueeze(1), x_t
         ).exp()
+
         return torch.distributions.Normal(mean, sigma)
 
 
@@ -447,6 +452,8 @@ class ConvCNP(BaseNP):
         kernel_size: int = 8,
         granularity: int = 64,  # discretized points per unit
         nonlinearity: nn.Module = nn.ReLU(),
+        encoder_lengthscale: Optional[float] = None,
+        decoder_lengthscale: Optional[float] = None,
         **conv_layer_kwargs,
     ):
         super().__init__(
@@ -456,23 +463,31 @@ class ConvCNP(BaseNP):
             embedded_dim,
         )
 
+        if encoder_lengthscale is None:
+            encoder_lengthscale = 10 / granularity
+
+        if decoder_lengthscale is None:
+            decoder_lengthscale = 1 / granularity
+
         self.encoder = ConvCNPEncoder(
             x_dim,
             y_dim,
-            cnn_chans,
             embedded_dim,
-            kernel_size,
             granularity,
-            conv=conv,
-            nonlinearity=nn.ReLU(),
-            normalisation=nn.Identity,  # nn.BatchNorm1d
-            **conv_layer_kwargs,
+            encoder_lengthscale=encoder_lengthscale,
         )
 
         self.decoder = ConvCNPDecoder(
             x_dim,
             y_dim,
-            granularity,
+            cnn_chans,
+            embedded_dim,
+            kernel_size,
+            conv=conv,
+            nonlinearity=nn.ReLU(),
+            normalisation=nn.Identity,
+            decoder_lengthscale=decoder_lengthscale,
+            **conv_layer_kwargs,
         )
 
 
