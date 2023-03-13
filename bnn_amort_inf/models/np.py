@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from ..models.likelihoods.normal import BernoulliLikelihood
 from ..utils.activations import NormalActivation
 from ..utils.networks import CNN, MLP, SetConv, Unet
 
@@ -149,9 +150,9 @@ class GridConvCNPEncoder(nn.Module):
         density = self.conv(M_c)
         F = F / torch.clamp(density, min=1e-8)  # normalise
         F = torch.cat([F, density], dim=0)  # shape (y_dim*2, *grid_shape)
-        # F = self.resizer(F.permute(1, 2, 0)).permute(
-        #     2, 0, 1
-        # )  # shape (embedded_dim, *grid_shape)
+        F = self.resizer(F.permute(1, 2, 0)).permute(
+            2, 0, 1
+        )  # shape (embedded_dim, *grid_shape)
 
         return F
 
@@ -510,6 +511,7 @@ class GridConvCNP(nn.Module):
         num_unet_layers: int = 6,
         unet_starting_chans: int = 16,
         pool: str = "max",
+        bernoulli_likelihood: bool = False,
     ):
         super().__init__()
 
@@ -517,6 +519,9 @@ class GridConvCNP(nn.Module):
         self.y_dim = y_dim
         self.nonlinearity = nonlinearity
         self.target_only_loss = target_only_loss
+        if bernoulli_likelihood:
+            self.bern_lik = BernoulliLikelihood()
+        self.bernoulli_likelihood = bernoulli_likelihood
 
         self.encoder = GridConvCNPEncoder(
             x_dim,  # should be 2 for an image
@@ -543,19 +548,27 @@ class GridConvCNP(nn.Module):
         )
 
     def forward(
-        self, I: torch.Tensor, M_c: torch.Tensor
+        self, I: torch.Tensor, M_c: torch.Tensor, num_samples: int = 10
     ) -> torch.distributions.Distribution:
         assert I.shape[-2:] == M_c.shape
-        return self.decoder(self.encoder(I, M_c))
+        F = self.decoder(self.encoder(I, M_c))
+        if self.bernoulli_likelihood:
+            pred_samps = F.rsample((num_samples,))
+            return self.bern_lik(pred_samps)
+        else:
+            return F
 
     def loss(
-        self, I: torch.Tensor, M_c: torch.Tensor
+        self,
+        I: torch.Tensor,
+        M_c: torch.Tensor,
+        num_samples: int = 10,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        dist = self.forward(I, M_c)
-        if self.target_only_loss:
-            M_t = (~(M_c.bool())).double()
-            ll = (M_t * dist.log_prob(I)).sum()
+        dist = self.forward(I, M_c, num_samples=num_samples)
+        if self.bernoulli_likelihood:
+            I_bern = I.unsqueeze(0).repeat(num_samples, 1, 1, 1)
+            ll = dist.log_prob(I_bern).mean(0).sum()
         else:
             ll = dist.log_prob(I).sum()
         metrics = {"ll": ll.item()}
-        return (-ll / torch.numel(M_c)), metrics
+        return (-ll / torch.count_nonzero(M_c.float())), metrics

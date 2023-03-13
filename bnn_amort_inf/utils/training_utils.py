@@ -67,11 +67,16 @@ def train_metamodel(
                 )
                 assert len(I.shape) == 3
                 if gridconv:
-                    loss, metrics = model.loss(I, M_c)
+                    if model.bernoulli_likelihood:
+                        loss, metrics = model.loss(I, M_c, num_samples=num_samples)
+                    else:
+                        loss, metrics = model.loss(I, M_c)
                 elif np_loss:
-                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, kl=np_kl)
+                    loss, metrics = model.np_loss(
+                        x_c, y_c, x_t, y_t, num_samples=num_samples, kl=np_kl
+                    )
                 else:
-                    loss, metrics = model.loss(x_c, y_c)
+                    loss, metrics = model.loss(x_c, y_c, num_samples=num_samples)
 
             else:
                 try:

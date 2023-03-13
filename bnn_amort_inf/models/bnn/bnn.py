@@ -35,9 +35,7 @@ class BaseBNN(nn.Module, ABC):
             F, kl = self(x, num_samples=num_samples)[:2]
 
         qy = self.likelihood(F)
-        exp_ll = (
-            qy.log_prob(y.unsqueeze(0).repeat(num_samples, 1, 1)).sum() / num_samples
-        )
+        exp_ll = qy.log_prob(y.unsqueeze(0).repeat(num_samples, 1, 1)).mean(0).sum()
         kl = kl.mean(0)
         elbo = exp_ll - kl
 
