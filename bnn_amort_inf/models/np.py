@@ -140,7 +140,7 @@ class GridConvCNPEncoder(nn.Module):
         assert len(I.shape) == self.x_dim + 1  # extra dimension for colour channels
         assert I.shape[0] == self.y_dim
         if len(M_c.shape) == self.x_dim:
-            M_c = M_c.unsqueeze(0)
+            M_c = M_c.unsqueeze(0).repeat(I.shape[0], 1, 1)
         assert len(M_c.shape) == len(I.shape)
 
         I_c = I * M_c  # get context pixels from image and context mask

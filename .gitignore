@@ -142,6 +142,7 @@ dmypy.json
 notebooks/examples/data/
 notebooks/data
 notebooks/experiment_two_i/
+notebooks/experiment_two_ii/
 
 npf
 npf_requirements.txt
