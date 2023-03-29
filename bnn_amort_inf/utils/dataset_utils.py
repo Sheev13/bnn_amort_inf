@@ -88,19 +88,31 @@ def vis_ctxt_img(mask: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
     if len(image.shape) == 4 and image.shape[0] == 1:
         image = image.squeeze(0)
     assert len(image.shape) == 3
-    assert image.shape[0] == 1  # greyscale
+    colours = image.shape[0]
+    assert colours in [1, 3]  # either greyscale or RGB
 
     mask = mask.bool()
-    image = torch.cat((image, image, image), dim=0)
-    blue = torch.cat(
-        (
-            torch.zeros_like(mask).unsqueeze(0),
-            torch.zeros_like(mask).unsqueeze(0),
-            torch.ones_like(mask).unsqueeze(0),
-        ),
-        dim=0,
-    )
-    image = torch.where(mask, image, blue)
+    if colours == 1:
+        image = torch.cat((image, image, image), dim=0)
+        blue = torch.cat(
+            (
+                torch.zeros_like(mask).unsqueeze(0),
+                torch.zeros_like(mask).unsqueeze(0),
+                torch.ones_like(mask).unsqueeze(0),
+            ),
+            dim=0,
+        )
+        image = torch.where(mask, image, blue)
+    elif colours == 3:
+        grey = torch.cat(
+            (
+                torch.zeros_like(mask).unsqueeze(0),
+                torch.zeros_like(mask).unsqueeze(0),
+                torch.ones_like(mask).unsqueeze(0),
+            ),
+            dim=0,
+        )
+        image = torch.where(mask, image, grey)
 
     return image.permute(1, 2, 0)  # permutation needed for matplotlib
 

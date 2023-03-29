@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from ..models.likelihoods.normal import BernoulliLikelihood
 from ..utils.activations import NormalActivation
 from ..utils.networks import CNN, MLP, SetConv, Unet
 
@@ -66,43 +67,23 @@ class ConvCNPEncoder(nn.Module):
         self,
         x_dim: int,
         y_dim: int,
-        cnn_chans: List[int],
         embedded_dim: int,
-        kernel_size: int,
         granularity: int,
-        conv: nn.Module = nn.Conv1d,
-        nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
-        **conv_layer_kwargs,
+        encoder_lengthscale: float = 0.1,
     ):
         super().__init__()
-
-        if cnn_chans[-1] != 2:
-            cnn_chans.append(2)  # output channels for mu and sigma
-
-        cnn_chans = [embedded_dim] + cnn_chans
-
-        self.cnn = CNN(
-            cnn_chans,
-            kernel_size,
-            conv,
-            nonlinearity,
-            normalisation,
-            **conv_layer_kwargs,
-        )
 
         self.set_conv = SetConv(
             x_dim,
             embedded_dim,
             train_lengthscale=True,
-            lengthscale=0.1 * granularity,
+            lengthscale=encoder_lengthscale,
         )
 
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.embedded_dim = embedded_dim
         self.granularity = granularity
-        self.nonlinearity = nonlinearity
 
     def forward(self, x_c, y_c, x_t):
         assert len(x_c.shape) == 2
@@ -119,12 +100,9 @@ class ConvCNPEncoder(nn.Module):
         x_grid = torch.linspace(x_min, x_max, num_points)
 
         F = self.set_conv(x_c, y_c, x_grid).permute(1, 0)
-        F = self.nonlinearity(F)
-        F = self.cnn(F.unsqueeze(0)).squeeze().permute(1, 0)
 
-        assert len(F.shape) == 2
-        assert F.shape[0] == num_points
-        assert F.shape[1] == 2
+        assert F.shape[0] == self.embedded_dim
+        assert F.shape[1] == num_points
 
         return (F, x_grid)
 
@@ -162,7 +140,7 @@ class GridConvCNPEncoder(nn.Module):
         assert len(I.shape) == self.x_dim + 1  # extra dimension for colour channels
         assert I.shape[0] == self.y_dim
         if len(M_c.shape) == self.x_dim:
-            M_c = M_c.unsqueeze(0)
+            M_c = M_c.unsqueeze(0).repeat(I.shape[0], 1, 1)
         assert len(M_c.shape) == len(I.shape)
 
         I_c = I * M_c  # get context pixels from image and context mask
@@ -172,9 +150,9 @@ class GridConvCNPEncoder(nn.Module):
         density = self.conv(M_c)
         F = F / torch.clamp(density, min=1e-8)  # normalise
         F = torch.cat([F, density], dim=0)  # shape (y_dim*2, *grid_shape)
-        # F = self.resizer(F.permute(1, 2, 0)).permute(
-        #     2, 0, 1
-        # )  # shape (embedded_dim, *grid_shape)
+        F = self.resizer(F.permute(1, 2, 0)).permute(
+            2, 0, 1
+        )  # shape (embedded_dim, *grid_shape)
 
         return F
 
@@ -229,19 +207,42 @@ class ConvCNPDecoder(nn.Module):
         self,
         x_dim: int,
         y_dim: int,
-        granularity: int,
+        cnn_chans: List[int],
+        embedded_dim: int,
+        kernel_size: int,
+        conv: nn.Module = nn.Conv1d,
+        nonlinearity: nn.Module = nn.ReLU(),
+        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
+        decoder_lengthscale: float = 0.01,
+        **conv_layer_kwargs,
     ):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
 
+        if cnn_chans[-1] != 2:
+            cnn_chans.append(2)  # output channels for mu and sigma
+
+        cnn_chans = [embedded_dim] + cnn_chans
+
+        self.cnn = CNN(
+            cnn_chans,
+            kernel_size,
+            conv,
+            nonlinearity,
+            normalisation,
+            **conv_layer_kwargs,
+        )
+
         self.mean_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
         )
 
         self.log_sigma_layer = SetConv(
-            1, y_dim, train_lengthscale=True, lengthscale=0.1 * granularity
+            1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
         )
+
+        self.nonlinearity = nonlinearity
 
     def forward(
         self,
@@ -250,13 +251,18 @@ class ConvCNPDecoder(nn.Module):
     ) -> torch.distributions.Distribution:
 
         z_c, x_grid = E
+        F = self.cnn(z_c.unsqueeze(0)).squeeze().permute(1, 0)
+
+        assert len(F.shape) == 2
+        assert F.shape[1] == 2
         assert len(x_t.shape) == 2
         assert x_t.shape[1] == self.x_dim
 
-        mean = self.mean_layer(x_grid.unsqueeze(1), z_c[:, 0].unsqueeze(1), x_t)
+        mean = self.mean_layer(x_grid.unsqueeze(1), F[:, 0].unsqueeze(1), x_t)
         sigma = self.log_sigma_layer(
-            x_grid.unsqueeze(1), z_c[:, 1].unsqueeze(1), x_t
+            x_grid.unsqueeze(1), F[:, 1].unsqueeze(1), x_t
         ).exp()
+
         return torch.distributions.Normal(mean, sigma)
 
 
@@ -447,6 +453,8 @@ class ConvCNP(BaseNP):
         kernel_size: int = 8,
         granularity: int = 64,  # discretized points per unit
         nonlinearity: nn.Module = nn.ReLU(),
+        encoder_lengthscale: Optional[float] = None,
+        decoder_lengthscale: Optional[float] = None,
         **conv_layer_kwargs,
     ):
         super().__init__(
@@ -456,23 +464,31 @@ class ConvCNP(BaseNP):
             embedded_dim,
         )
 
+        if encoder_lengthscale is None:
+            encoder_lengthscale = 10 / granularity
+
+        if decoder_lengthscale is None:
+            decoder_lengthscale = 1 / granularity
+
         self.encoder = ConvCNPEncoder(
             x_dim,
             y_dim,
-            cnn_chans,
             embedded_dim,
-            kernel_size,
             granularity,
-            conv=conv,
-            nonlinearity=nn.ReLU(),
-            normalisation=nn.Identity,  # nn.BatchNorm1d
-            **conv_layer_kwargs,
+            encoder_lengthscale=encoder_lengthscale,
         )
 
         self.decoder = ConvCNPDecoder(
             x_dim,
             y_dim,
-            granularity,
+            cnn_chans,
+            embedded_dim,
+            kernel_size,
+            conv=conv,
+            nonlinearity=nn.ReLU(),
+            normalisation=nn.Identity,
+            decoder_lengthscale=decoder_lengthscale,
+            **conv_layer_kwargs,
         )
 
 
@@ -495,6 +511,7 @@ class GridConvCNP(nn.Module):
         num_unet_layers: int = 6,
         unet_starting_chans: int = 16,
         pool: str = "max",
+        bernoulli_likelihood: bool = False,
     ):
         super().__init__()
 
@@ -502,6 +519,9 @@ class GridConvCNP(nn.Module):
         self.y_dim = y_dim
         self.nonlinearity = nonlinearity
         self.target_only_loss = target_only_loss
+        if bernoulli_likelihood:
+            self.bern_lik = BernoulliLikelihood()
+        self.bernoulli_likelihood = bernoulli_likelihood
 
         self.encoder = GridConvCNPEncoder(
             x_dim,  # should be 2 for an image
@@ -528,19 +548,27 @@ class GridConvCNP(nn.Module):
         )
 
     def forward(
-        self, I: torch.Tensor, M_c: torch.Tensor
+        self, I: torch.Tensor, M_c: torch.Tensor, num_samples: int = 10
     ) -> torch.distributions.Distribution:
         assert I.shape[-2:] == M_c.shape
-        return self.decoder(self.encoder(I, M_c))
+        F = self.decoder(self.encoder(I, M_c))
+        if self.bernoulli_likelihood:
+            pred_samps = F.rsample((num_samples,))
+            return self.bern_lik(pred_samps)
+        else:
+            return F
 
     def loss(
-        self, I: torch.Tensor, M_c: torch.Tensor
+        self,
+        I: torch.Tensor,
+        M_c: torch.Tensor,
+        num_samples: int = 10,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        dist = self.forward(I, M_c)
-        if self.target_only_loss:
-            M_t = (~(M_c.bool())).double()
-            ll = (M_t * dist.log_prob(I)).sum()
+        dist = self.forward(I, M_c, num_samples=num_samples)
+        if self.bernoulli_likelihood:
+            I_bern = I.unsqueeze(0).repeat(num_samples, 1, 1, 1)
+            ll = dist.log_prob(I_bern).mean(0).sum()
         else:
             ll = dist.log_prob(I).sum()
         metrics = {"ll": ll.item()}
-        return (-ll / torch.numel(M_c)), metrics
+        return (-ll / torch.count_nonzero(M_c.float())), metrics

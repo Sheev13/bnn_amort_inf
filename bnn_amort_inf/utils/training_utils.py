@@ -42,7 +42,7 @@ def train_metamodel(
         batch_metrics: Dict = defaultdict(float)
         for _ in range(
             batch_size
-        ):  # reimplement this to be vectorised (introduce batch dimensionality)
+        ):  # reimplement this to be vectorised (introduce batch dimensionality)?
             if image:
                 try:
                     (img, mask) = next(dataset_iterator)
