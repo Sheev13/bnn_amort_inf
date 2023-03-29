@@ -110,7 +110,6 @@ class AmortisedGIBNN(BaseBNN):
         pws: Optional[List[torch.distributions.Normal]] = None,
         in_nonlinearity: nn.Module = nn.ReLU(),
         likelihood: Callable = NormalLikelihood(noise=1.0),
-        np_kl: bool = True,
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
@@ -156,18 +155,14 @@ class AmortisedGIBNN(BaseBNN):
                 )
             )
 
-        self.np_kl = np_kl
-
     def forward(  # pylint: disable=arguments-differ
         self,
         x: torch.Tensor,
         y: torch.Tensor,
         x_test: Optional[torch.Tensor] = None,
         num_samples: int = 1,
-        data: Optional[
-            str
-        ] = None,  # not None if np loss in use. Specifies if context or union dataset
         compute_kl: bool = True,
+        cache_name: str = "qw",
     ) -> Tuple[torch.Tensor, Union[torch.Tensor, None], Union[torch.Tensor, None]]:
         assert len(x.shape) == 2
         assert len(y.shape) == 2
@@ -191,14 +186,11 @@ class AmortisedGIBNN(BaseBNN):
 
             # Sample GIBNNLayer.
             if i == (len(self.layers) - 1) and hasattr(self.likelihood, "noise"):
-                layer(U=F, data=data, y=y, noise=self.likelihood.noise)
+                layer(U=F, cache_name=cache_name, y=y, noise=self.likelihood.noise)
             else:
-                layer(U=F, data=data, x=x, y=y)
+                layer(U=F, cache_name=cache_name, x=x, y=y)
 
-            if data is None:
-                qw = layer.cache["qw"]
-            else:
-                qw = layer.cache["qw_" + data]
+            qw = layer.cache[cache_name]
 
             # (num_samples, output_dim, input_dim).
             w = qw.rsample()
@@ -229,7 +221,7 @@ class AmortisedGIBNN(BaseBNN):
 
         return F, kl_total, F_test
 
-    def np_loss(
+    def npml_loss(
         self,
         x_c: torch.Tensor,
         y_c: torch.Tensor,
@@ -246,44 +238,68 @@ class AmortisedGIBNN(BaseBNN):
         assert x_t.shape[-1] == self.x_dim
         assert y_t.shape[-1] == self.y_dim
 
-        # x = torch.cat((x_c, x_t), dim=0)
-        # y = torch.cat((y_c, y_t), dim=0)
+        F_t = self(x_c, y_c, x_test=x_t, num_samples=num_samples, compute_kl=False)[2]
 
-        # F_t_u = self(
-        #     x, y, x_test=x_t, num_samples=num_samples, data="u", compute_kl=False
-        # )[2]
-        F_t_c = self(x_c, y_c, x_test=x_t, num_samples=num_samples, data="c")[2]
-
-        # np_kl_total = KL(q(W|D)||q(W|D_c))
-        np_kl_total = None
-        if self.np_kl:
-            for layer in self.layers:
-                qw_c = layer.cache["qw_c"]
-                qw_u = layer.cache["qw_u"]
-
-                np_kl = torch.distributions.kl.kl_divergence(qw_u, qw_c).sum(-1)
-
-                if np_kl_total is None:
-                    np_kl_total = np_kl
-                else:
-                    np_kl_total += np_kl
-
-        if np_kl_total is None:
-            np_kl_total = torch.tensor(0.0).unsqueeze(0)
-
-        # exp_ll_t = self.exp_ll(F_t_c, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
-        qy_t = self.likelihood(F_t_c)
-        exp_ll_t = (
+        qy_t = self.likelihood(F_t)
+        exp_ll = (
             qy_t.log_prob(y_t.unsqueeze(0).repeat(num_samples, 1, 1)).sum()
             / num_samples
         )
-        np_kl_total = np_kl_total.mean(0)
-        loss = exp_ll_t - np_kl_total
 
         metrics = {
-            "elbo": loss.item(),
-            "exp_ll_t": exp_ll_t.item(),
-            "np_kl": np_kl_total.item(),
+            "exp_ll": exp_ll.item(),
         }
 
-        return (-loss / x_t.shape[0]), metrics
+        return (-exp_ll / x_t.shape[0]), metrics
+
+    def npvi_loss(
+        self,
+        x_c: torch.Tensor,
+        y_c: torch.Tensor,
+        x_t: torch.Tensor,
+        y_t: torch.Tensor,
+        num_samples: int = 1,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        assert len(x_c.shape) == 2
+        assert len(y_c.shape) == 2
+        assert len(x_t.shape) == 2
+        assert len(y_t.shape) == 2
+        assert x_c.shape[-1] == self.x_dim
+        assert y_c.shape[-1] == self.y_dim
+        assert x_t.shape[-1] == self.x_dim
+        assert y_t.shape[-1] == self.y_dim
+
+        x = torch.cat((x_c, x_t), dim=-2)
+        y = torch.cat((y_c, y_t), dim=-2)
+
+        F_t = self(
+            x,
+            y,
+            x_test=x_t,
+            num_samples=num_samples,
+            compute_kl=False,
+            cache_name="qw_u",
+        )[2]
+        _ = self(x_c, y_c, num_samples=num_samples, compute_kl=False, cache_name="qw_c")
+
+        kl = torch.as_tensor(0.0)
+        for layer in self.layers:
+            qw_c = layer.cache["qw_c"]
+            qw_u = layer.cache["qw_u"]
+            kl += torch.distributions.kl.kl_divergence(qw_u, qw_c).sum() / num_samples
+
+        # exp_ll_t = self.exp_ll(F_t_c, y_t).mean(0)  # F_t_u: correct, F_t_c: intuitive
+        qy_t = self.likelihood(F_t)
+        exp_ll = (
+            qy_t.log_prob(y_t.unsqueeze(0).repeat(num_samples, 1, 1)).sum()
+            / num_samples
+        )
+        elbo = exp_ll - kl
+
+        metrics = {
+            "elbo": elbo.item(),
+            "exp_ll": exp_ll.item(),
+            "kl": kl.item(),
+        }
+
+        return (-elbo / x_t.shape[0]), metrics

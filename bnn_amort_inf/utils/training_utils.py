@@ -5,14 +5,13 @@ import gpytorch
 import torch
 from tqdm import tqdm
 
-from .dataset_utils import MetaDataset, context_target_split
+from .dataset_utils import MetaDataset, context_target_split, img_for_reg
 
 
 def train_metamodel(
     model,
     dataset: MetaDataset,
-    neural_process: bool = False,
-    np_loss: bool = False,
+    loss_fn: str = "loss",
     min_context: int = 3,
     max_context: int = 50,
     max_iters: int = 10_000,
@@ -46,24 +45,23 @@ def train_metamodel(
         ):  # reimplement this to be vectorised (introduce batch dimensionality)
             if image:
                 try:
-                    (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
+                    (img, mask) = next(dataset_iterator)
                 except StopIteration:
                     dataset_iterator = iter(dataloader)
-                    (I, M_c, x_c, y_c, x_t, y_t) = next(dataset_iterator)
-                I, M_c = I.squeeze(0), M_c.squeeze(0)
-                x_c, y_c, x_t, y_t = (
-                    x_c.squeeze(0),
-                    y_c.squeeze(0),
-                    x_t.squeeze(0),
-                    y_t.squeeze(0),
-                )
-                assert len(I.shape) == 3
+                    (img, mask) = next(dataset_iterator)
+
+                img, mask = img.squeeze(0), mask.squeeze(0)
+
                 if gridconv:
-                    loss, metrics = model.loss(I, M_c)
-                elif np_loss:
-                    loss, metrics = model.np_loss(x_c, y_c, x_t, y_t)
+                    loss, metrics = getattr(model, f"{loss_fn}")(img, mask)
+                elif loss_fn in ["npvi_loss", "npml_loss"]:
+                    x_c, y_c, x_t, y_t = img_for_reg(img, mask)
+                    loss, metrics = getattr(model, f"{loss_fn}")(x_c, y_c, x_t, y_t)
                 else:
-                    loss, metrics = model.loss(x_c, y_c)
+                    x_c, y_c, x_t, y_t = img_for_reg(img, mask)
+                    loss, metrics = getattr(model, f"{loss_fn}")(
+                        torch.cat((x_c, x_t)), torch.cat((y_c, y_t))
+                    )
 
             else:
                 try:
@@ -72,17 +70,16 @@ def train_metamodel(
                     dataset_iterator = iter(dataloader)
                     (x, y) = next(dataset_iterator)
                 x, y = x.squeeze(0), y.squeeze(0)
-                if neural_process or np_loss:
+                if loss_fn in ["npvi_loss", "npml_loss"]:
                     # Randomly sample context and target points.
                     (x_c, y_c), (x_t, y_t) = context_target_split(
                         x, y, min_context, max_context
                     )
-                    if np_loss:
-                        loss, metrics = model.np_loss(x_c, y_c, x_t, y_t, num_samples)
-                    else:
-                        loss, metrics = model.loss(x_c, y_c, x_t, y_t)
+                    loss, metrics = getattr(model, f"{loss_fn}")(
+                        x_c, y_c, x_t, y_t, num_samples=num_samples
+                    )
                 else:
-                    loss, metrics = model.loss(x, y, num_samples)
+                    loss, metrics = getattr(model, f"{loss_fn}")(x, y, num_samples)
 
             batch_loss += loss / batch_size
             for key, value in metrics.items():
