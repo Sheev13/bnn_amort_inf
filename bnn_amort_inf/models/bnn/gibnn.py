@@ -3,6 +3,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import torch
 from torch import nn
 
+from ..likelihoods.base import Likelihood
 from ..likelihoods.normal import NormalLikelihood
 from .bnn import BaseBNN
 from .gibnn_layers import AmortisedGIBNNLayer, FinalGIBNNLayer, FreeFormGIBNNLayer
@@ -20,7 +21,7 @@ class GIBNN(BaseBNN):
         inducing_points: Optional[torch.Tensor] = None,
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
-        likelihood: Callable = NormalLikelihood(noise=1.0),
+        likelihood: Likelihood = NormalLikelihood(noise=1.0),
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
@@ -109,7 +110,7 @@ class AmortisedGIBNN(BaseBNN):
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
         in_nonlinearity: nn.Module = nn.ReLU(),
-        likelihood: Callable = NormalLikelihood(noise=1.0),
+        likelihood: Likelihood = NormalLikelihood(noise=1.0),
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
