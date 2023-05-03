@@ -13,7 +13,7 @@ def train_metamodel(
     dataset: MetaDataset,
     loss_fn: str = "loss",
     min_context: int = 3,
-    max_context: int = 50,
+    max_context: int = 20,
     max_iters: int = 10_000,
     num_samples: int = 1,
     batch_size: int = 1,
@@ -41,7 +41,7 @@ def train_metamodel(
         batch_loss = torch.tensor(0.0)
         batch_metrics: Dict = defaultdict(float)
         for _ in range(
-            batch_size
+            min(batch_size, len(dataset))
         ):  # reimplement this to be vectorised (introduce batch dimensionality)?
             if image:
                 try:
@@ -70,6 +70,7 @@ def train_metamodel(
                     dataset_iterator = iter(dataloader)
                     (x, y) = next(dataset_iterator)
                 x, y = x.squeeze(0), y.squeeze(0)
+
                 if loss_fn in ["npvi_loss", "npml_loss"]:
                     # Randomly sample context and target points.
                     (x_c, y_c), (x_t, y_t) = context_target_split(
@@ -120,7 +121,8 @@ def train_model(
     model,
     dataset: torch.utils.data.Dataset,
     max_iters: int = 10_000,
-    batch_size: int = 1,
+    batch_size: int = 128,
+    num_samples: int = 5,
     lr: float = 1e-2,
     es: bool = True,
     min_es_iters: int = 1_000,
@@ -148,7 +150,7 @@ def train_model(
             dataset_iterator = iter(dataloader)
             (x, y) = next(dataset_iterator)
 
-        loss, metrics = model.loss(x, y)
+        loss, metrics = model.loss(x, y, num_samples=num_samples)
 
         loss.backward()
         opt.step()

@@ -153,6 +153,8 @@ class ConvCNPDecoder(nn.Module):
             cnn_chans.append(
                 self.likelihood.out_dim_multiplier
             )  # Single output channel.
+        # if cnn_chans[-1] != 1:
+        #     cnn_chans.append(1)
 
         cnn_chans = [embedded_dim] + cnn_chans
 
@@ -183,7 +185,9 @@ class ConvCNPDecoder(nn.Module):
         x_grid: torch.Tensor,
         x_t: torch.Tensor,
     ) -> torch.distributions.Distribution:
-        z_c_proc = self.cnn(z_c.unsqueeze(0)).squeeze(0).permute(1, 0)
+        z_c_proc = (
+            self.cnn(nn.functional.sigmoid(z_c).unsqueeze(0)).squeeze(0).permute(1, 0)
+        )
 
         assert len(z_c_proc.shape) == 2
         assert z_c_proc.shape[1] == self.likelihood.out_dim_multiplier
@@ -194,7 +198,12 @@ class ConvCNPDecoder(nn.Module):
             torch.cat(
                 [
                     self.set_convs[i](
-                        x_grid.unsqueeze(1), z_c_proc[:, i].unsqueeze(-1), x_t
+                        x_grid.unsqueeze(1),
+                        z_c_proc[:, i].unsqueeze(-1),
+                        x_t
+                        # x_grid.unsqueeze(1),
+                        # z_c_proc,
+                        # x_t,
                     )
                     for i in range(self.likelihood.out_dim_multiplier)
                 ],

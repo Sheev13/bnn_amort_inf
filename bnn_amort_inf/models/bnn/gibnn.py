@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -19,9 +19,14 @@ class GIBNN(BaseBNN):
         hidden_dims: List[int],
         num_inducing: int,
         inducing_points: Optional[torch.Tensor] = None,
+        final_layer_mu: Optional[torch.Tensor] = None,
+        final_layer_prec: float = None,
         nonlinearity: nn.Module = nn.ReLU(),
         pws: Optional[List[torch.distributions.Normal]] = None,
         likelihood: Likelihood = NormalLikelihood(noise=1.0),
+        learn_inducing_points: bool = True,
+        learn_final_layer_mu: bool = True,
+        learn_final_layer_prec: bool = True,
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
@@ -34,20 +39,55 @@ class GIBNN(BaseBNN):
             assert len(pws) == (len(dims) - 1)
 
         if inducing_points is None:
-            self.inducing_points = nn.Parameter(torch.randn(num_inducing, x_dim))
+            self.inducing_points = nn.Parameter(
+                torch.randn(num_inducing, x_dim), requires_grad=learn_inducing_points
+            )
         else:
             assert inducing_points.shape == torch.Size((num_inducing, x_dim))
-            self.inducing_points = nn.Parameter(inducing_points)
+            self.inducing_points = nn.Parameter(
+                inducing_points, requires_grad=learn_inducing_points
+            )
 
         # ModuleList for storing GIBNNLayers.
         self.layers = nn.ModuleList()
         for i in range(len(dims) - 1):
+            # Initialise the pseudo-precisions to be small for the final layer.
+            if i == len(dims) - 2:
+                if final_layer_prec is not None:
+                    init_prec = final_layer_prec
+                else:
+                    init_prec = 1e-2
+                if final_layer_mu is not None:
+                    init_mu = final_layer_mu
+                else:
+                    init_mu = None
+
+                if learn_final_layer_mu:
+                    learn_mu = True
+                else:
+                    learn_mu = False
+
+                if learn_final_layer_prec:
+                    learn_prec = True
+                else:
+                    learn_prec = False
+            else:
+                init_prec = 1e-2
+                init_mu = None
+
+                learn_mu = True
+                learn_prec = True
+
             self.layers.append(
                 FreeFormGIBNNLayer(
                     dims[i] + 1,
                     dims[i + 1],
                     num_pseudo=num_inducing,
                     pw=pws[i],
+                    pseudo_mu=init_mu,
+                    pseudo_prec=torch.ones(self.num_inducing, dims[i + 1]) * init_prec,
+                    learn_mu=learn_mu,
+                    learn_prec=learn_prec,
                 )
             )
 

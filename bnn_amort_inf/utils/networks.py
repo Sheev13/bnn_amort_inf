@@ -165,7 +165,6 @@ class Unet(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
         x = self.in_block(x)
 
         half_u_blocks = self.num_u_blocks // 2

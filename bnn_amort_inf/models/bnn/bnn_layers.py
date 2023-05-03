@@ -20,7 +20,8 @@ class BaseBNNLayer(nn.Module, ABC):
 
         if pw is None:
             self.pw = torch.distributions.Normal(
-                torch.zeros(output_dim, input_dim), torch.ones(output_dim, input_dim)
+                torch.zeros(output_dim, input_dim),
+                (torch.ones(output_dim, input_dim)).sqrt(),
             )
         else:
             assert isinstance(pw, torch.distributions.Normal)
