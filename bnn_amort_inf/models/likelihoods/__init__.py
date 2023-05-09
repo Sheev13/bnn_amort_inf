@@ -1,1 +1,1 @@
-from . import normal
+from . import base, bernoulli, normal

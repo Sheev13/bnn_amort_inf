@@ -38,7 +38,6 @@ def cubic_dataset(
     noise_std: float = 3.0,
     dataset_size: int = 100,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-
     noise_std = torch.tensor(noise_std)
 
     x_neg, x_pos = torch.zeros(dataset_size // 2), torch.zeros(dataset_size // 2)
@@ -62,7 +61,6 @@ def sawtooth_dataset(
     lower: float = -3.0,
     upper: float = 3.0,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-
     noise_std = torch.tensor(noise_std)
 
     dataset_size = torch.randint(min_n, max_n, (1,))
@@ -120,20 +118,23 @@ def vis_ctxt_img(mask: torch.Tensor, image: torch.Tensor) -> torch.Tensor:
 
 
 def img_for_reg(
-    I: torch.Tensor, M_c: torch.Tensor
+    img: torch.Tensor, mask: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    num_x1, num_x2 = I.shape[-2:]
+    num_x1, num_x2 = img.shape[-2:]
     num_pix = num_x1 * num_x2
     x1_range = torch.linspace(-1, 1, num_x1)
     x2_range = torch.linspace(-1, 1, num_x2)
     xm1, xm2 = torch.meshgrid(x1_range, x2_range, indexing="xy")
-    x1 = xm1.reshape((num_pix))
-    x2 = xm2.reshape((num_pix))
-    x_t = torch.cat((x1.unsqueeze(-1), x2.unsqueeze(-1)), dim=-1)
-    y_t = I.reshape((I.shape[0], num_pix))
-    flat_mc = M_c.reshape((num_pix))
-    x_c = x_t[flat_mc.bool()]
-    y_c = y_t[:, flat_mc.bool()]
+    x1 = xm1.flatten()
+    x2 = xm2.flatten()
+
+    x = torch.stack((x1, x2)).transpose(-1, -2)
+    y = img.reshape(-1, num_pix)
+
+    x_c = x[mask.flatten().bool()]
+    x_t = x[~mask.flatten().bool()]
+    y_c = y[:, mask.flatten().bool()]
+    y_t = y[:, ~mask.flatten().bool()]
     return x_c, y_c.T, x_t, y_t.T
 
 

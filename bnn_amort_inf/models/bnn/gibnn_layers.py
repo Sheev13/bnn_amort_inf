@@ -66,15 +66,12 @@ class GIBNNLayer(BaseBNNLayer, ABC):
         # return torch.distributions.MultivariateNormal(q_mu, precision_matrix=q_prec)
 
     def forward(
-        self, U: torch.Tensor, *args, data: Optional[str] = None, **kwargs
+        self, U: torch.Tensor, cache_name: str = "qw", **kwargs
     ):  # pylint: disable=arguments-differ
         """Computes q(w) and stores in cache."""
-        pseudo_likelihood = self.pseudo_likelihood(*args, **kwargs)
+        pseudo_likelihood = self.pseudo_likelihood(**kwargs)
         qw = self.qw(U, pseudo_likelihood)
-        if data is None:
-            self._cache["qw"] = qw
-        else:
-            self._cache["qw_" + data] = qw
+        self._cache[cache_name] = qw
 
 
 class FreeFormGIBNNLayer(GIBNNLayer):
@@ -86,29 +83,38 @@ class FreeFormGIBNNLayer(GIBNNLayer):
         pseudo_mu: Optional[torch.Tensor] = None,
         pseudo_prec: Optional[torch.Tensor] = None,
         pw: Optional[torch.distributions.Normal] = None,
+        learn_mu: bool = True,
+        learn_prec: bool = True,
     ):
         super().__init__(input_dim, output_dim, pw)
 
         if pseudo_mu is None:
-            self.pseudo_mu = nn.Parameter(torch.randn(num_pseudo, output_dim))
+            self.pseudo_mu = nn.Parameter(
+                torch.randn(num_pseudo, output_dim) * 0.01, requires_grad=learn_mu
+            )
         else:
             assert pseudo_mu.shape[1] == output_dim
             assert pseudo_mu.shape[0] == num_pseudo
-            self.pseudo_mu = nn.Parameter(pseudo_mu)
+            self.pseudo_mu = nn.Parameter(pseudo_mu, requires_grad=learn_mu)
 
         if pseudo_prec is None:
             self.pseudo_logprec = nn.Parameter(
-                (torch.ones(num_pseudo, output_dim) * 1).log()
+                (torch.ones(num_pseudo, output_dim) * 1).log(),
+                requires_grad=learn_prec,
             )
         else:
             assert pseudo_prec.shape[1] == output_dim
             assert pseudo_prec.shape[0] == num_pseudo
-            self.pseudo_logprec = nn.Parameter(pseudo_prec.log())
+            self.pseudo_logprec = nn.Parameter(
+                pseudo_prec.log(), requires_grad=learn_prec
+            )
 
     def pseudo_likelihood(  # pylint: disable=arguments-differ
         self,
     ) -> torch.distributions.Normal:
-        return torch.distributions.Normal(self.pseudo_mu, (-self.pseudo_logprec).exp())
+        return torch.distributions.Normal(
+            self.pseudo_mu, (-0.5 * self.pseudo_logprec).exp()
+        )
 
 
 class FinalGIBNNLayer(GIBNNLayer):
