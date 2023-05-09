@@ -53,6 +53,7 @@ def train_metamodel(
                 img, mask = img.squeeze(0), mask.squeeze(0)
 
                 if gridconv:
+                    loss_fn = "npml_loss"
                     loss, metrics = getattr(model, f"{loss_fn}")(img, mask)
                 elif loss_fn in ["npvi_loss", "npml_loss"]:
                     x_c, y_c, x_t, y_t = img_for_reg(img, mask)

@@ -138,6 +138,18 @@ def img_for_reg(
     return x_c, y_c.T, x_t, y_t.T
 
 
+def test_grid(image_shape: torch.Size):
+    num_x1, num_x2 = image_shape
+    num_pix = num_x1 * num_x2
+    x1_range = torch.linspace(-1, 1, num_x1)
+    x2_range = torch.linspace(-1, 1, num_x2)
+    xm1, xm2 = torch.meshgrid(x1_range, x2_range, indexing="xy")
+    x1 = xm1.flatten()
+    x2 = xm2.flatten()
+
+    return torch.stack((x1, x2)).transpose(-1, -2)
+
+
 def samps_to_img_dist(preds: torch.Tensor, img_shape=(28, 28, 1)):
     preds = preds.detach()
     mean, std = preds.mean(0), preds.std(0)

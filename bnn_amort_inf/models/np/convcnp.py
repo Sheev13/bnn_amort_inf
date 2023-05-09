@@ -5,7 +5,7 @@ from torch import nn
 
 from ...utils.networks import CNN, MLP, SetConv, Unet
 from ..likelihoods.base import Likelihood
-from ..likelihoods.normal import NormalLikelihood
+from ..likelihoods.normal import HeteroscedasticNormalLikelihood, NormalLikelihood
 from .base import BaseNP
 
 
@@ -185,9 +185,7 @@ class ConvCNPDecoder(nn.Module):
         x_grid: torch.Tensor,
         x_t: torch.Tensor,
     ) -> torch.distributions.Distribution:
-        z_c_proc = (
-            self.cnn(nn.functional.sigmoid(z_c).unsqueeze(0)).squeeze(0).permute(1, 0)
-        )
+        z_c_proc = self.cnn(torch.sigmoid(z_c).unsqueeze(0)).squeeze(0).permute(1, 0)
 
         assert len(z_c_proc.shape) == 2
         assert z_c_proc.shape[1] == self.likelihood.out_dim_multiplier
@@ -285,6 +283,8 @@ class GridConvCNPDecoder(nn.Module):
         z_c = self.mlp(z_c.permute(1, 2, 0)).permute(
             2, 0, 1
         )  # shape (y_dim * 2, *grid_shape)
+        if isinstance(self.likelihood, HeteroscedasticNormalLikelihood):
+            return self.likelihood(z_c.permute(1, 2, 0))
         return self.likelihood(z_c)
 
 
@@ -385,6 +385,7 @@ class GridConvCNP(BaseNP):
         )
 
         super().__init__(x_dim, y_dim, embedded_dim, encoder, decoder)
+        self.likelihood = likelihood
 
     def forward(
         self,
