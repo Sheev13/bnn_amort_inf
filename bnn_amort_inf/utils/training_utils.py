@@ -45,21 +45,21 @@ def train_metamodel(
         ):  # reimplement this to be vectorised (introduce batch dimensionality)?
             if image:
                 try:
-                    (img, mask) = next(dataset_iterator)
+                    (img, bin_img, mask) = next(dataset_iterator)
                 except StopIteration:
                     dataset_iterator = iter(dataloader)
-                    (img, mask) = next(dataset_iterator)
+                    (img, bin_img, mask) = next(dataset_iterator)
 
-                img, mask = img.squeeze(0), mask.squeeze(0)
+                img, bin_img, mask = img.squeeze(0), bin_img.squeeze(0), mask.squeeze(0)
 
                 if gridconv:
                     loss_fn = "npml_loss"
-                    loss, metrics = getattr(model, f"{loss_fn}")(img, mask)
+                    loss, metrics = getattr(model, f"{loss_fn}")(bin_img, mask)
                 elif loss_fn in ["npvi_loss", "npml_loss"]:
-                    x_c, y_c, x_t, y_t = img_for_reg(img, mask)
+                    x_c, y_c, x_t, y_t = img_for_reg(bin_img, mask)
                     loss, metrics = getattr(model, f"{loss_fn}")(x_c, y_c, x_t, y_t)
                 else:
-                    x_c, y_c, x_t, y_t = img_for_reg(img, mask)
+                    x_c, y_c, x_t, y_t = img_for_reg(bin_img, mask)
                     loss, metrics = getattr(model, f"{loss_fn}")(
                         torch.cat((x_c, x_t)), torch.cat((y_c, y_t))
                     )

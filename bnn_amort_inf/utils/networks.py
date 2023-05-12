@@ -235,7 +235,7 @@ class SetConv(nn.Module):
         F = F.sum(0)  # shape (num_grid, in_chan)
 
         # normalise convolution using density channel
-        density, conv = F[:, : self.in_dim], F[:, self.in_dim :]
+        density, conv = F[..., : self.in_dim], F[..., self.in_dim :]
         norm_conv = conv / (density + 1e-8)
         F = torch.cat([density, norm_conv], dim=-1)
 

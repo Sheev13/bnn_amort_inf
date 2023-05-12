@@ -143,6 +143,9 @@ notebooks/examples/data/
 notebooks/data
 notebooks/experiment_two_i/
 notebooks/experiment_two_ii/
+notebooks/experiment_two/
 
 npf
 npf_requirements.txt
+
+.vscode

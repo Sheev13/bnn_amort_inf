@@ -28,7 +28,7 @@ def make_abs_conv(Conv):
 
 
 class ConvCNPEncoder(nn.Module):
-    """Represents a ConvCNP encoder for off-the-grid data.."""
+    """Represents a ConvCNP encoder for off-the-grid data."""
 
     def __init__(
         self,
@@ -172,11 +172,11 @@ class ConvCNPDecoder(nn.Module):
         ]
 
         # self.mean_layer = SetConv(
-        #     1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
+        #     1, y_dim, train_lengthscale=True, lengthscale=lengthscale
         # )
 
         # self.log_sigma_layer = SetConv(
-        #     1, y_dim, train_lengthscale=True, lengthscale=decoder_lengthscale
+        #     1, y_dim, train_lengthscale=True, lengthscale=lengthscale
         # )
 
     def forward(
@@ -196,12 +196,7 @@ class ConvCNPDecoder(nn.Module):
             torch.cat(
                 [
                     self.set_convs[i](
-                        x_grid.unsqueeze(1),
-                        z_c_proc[:, i].unsqueeze(-1),
-                        x_t
-                        # x_grid.unsqueeze(1),
-                        # z_c_proc,
-                        # x_t,
+                        x_grid.unsqueeze(1), z_c_proc[:, i].unsqueeze(-1), x_t
                     )
                     for i in range(self.likelihood.out_dim_multiplier)
                 ],
@@ -209,10 +204,12 @@ class ConvCNPDecoder(nn.Module):
             )
         )
 
-        # mean = self.mean_layer(x_grid.unsqueeze(1), z_c[:, 0].unsqueeze(1), x_t)
+        # mean = self.mean_layer(x_grid.unsqueeze(1), z_c_proc[:, 0].unsqueeze(1), x_t)
         # sigma = self.log_sigma_layer(
-        #     x_grid.unsqueeze(1), z_c[:, 1].unsqueeze(1), x_t
+        #     x_grid.unsqueeze(1), z_c_proc[:, 1].unsqueeze(1), x_t
         # ).exp()
+
+        # return torch.distributions.Normal(mean, sigma)
 
 
 class GridConvCNPDecoder(nn.Module):
@@ -299,10 +296,11 @@ class ConvCNP(BaseNP):
         likelihood: Likelihood = NormalLikelihood(noise=0.1),
         cnn_chans: List[int] = [32, 32],
         conv: nn.Module = nn.Conv1d,
-        kernel_size: int = 8,
+        kernel_size: int = 9,
         granularity: int = 64,  # discretized points per unit
         encoder_lengthscale: Optional[float] = None,
         decoder_lengthscale: Optional[float] = None,
+        nonlinearity: nn.Module = nn.ReLU(),
         **conv_layer_kwargs,
     ):
         if encoder_lengthscale is None:
@@ -326,7 +324,7 @@ class ConvCNP(BaseNP):
             embedded_dim,
             kernel_size,
             conv=conv,
-            nonlinearity=nn.ReLU(),
+            nonlinearity=nonlinearity,
             normalisation=nn.Identity,
             lengthscale=decoder_lengthscale,
             likelihood=likelihood,
