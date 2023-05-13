@@ -25,6 +25,7 @@ def train_metamodel(
     es_thresh: float = 1e-2,
     gridconv: bool = False,
     image: bool = False,
+    binary_image: bool = False,
     man_thresh: Optional[Tuple[str, float]] = None,
 ) -> Dict[str, List[Any]]:
     assert ref_es_iters < min_es_iters
@@ -43,23 +44,26 @@ def train_metamodel(
         for _ in range(
             min(batch_size, len(dataset))
         ):  # reimplement this to be vectorised (introduce batch dimensionality)?
-            if image:
+            if binary_image or image:
                 try:
-                    (img, bin_img, mask) = next(dataset_iterator)
+                    (img, mask) = next(dataset_iterator)
                 except StopIteration:
                     dataset_iterator = iter(dataloader)
-                    (img, bin_img, mask) = next(dataset_iterator)
+                    (img, mask) = next(dataset_iterator)
 
-                img, bin_img, mask = img.squeeze(0), bin_img.squeeze(0), mask.squeeze(0)
+                img, mask = img.squeeze(0), mask.squeeze(0)
+                train_img = img
+                if binary_image:
+                    train_img = train_img.round()
 
                 if gridconv:
                     loss_fn = "npml_loss"
-                    loss, metrics = getattr(model, f"{loss_fn}")(bin_img, mask)
+                    loss, metrics = getattr(model, f"{loss_fn}")(train_img, mask)
                 elif loss_fn in ["npvi_loss", "npml_loss"]:
-                    x_c, y_c, x_t, y_t = img_for_reg(bin_img, mask)
+                    x_c, y_c, x_t, y_t = img_for_reg(train_img, mask)
                     loss, metrics = getattr(model, f"{loss_fn}")(x_c, y_c, x_t, y_t)
                 else:
-                    x_c, y_c, x_t, y_t = img_for_reg(bin_img, mask)
+                    x_c, y_c, x_t, y_t = img_for_reg(train_img, mask)
                     loss, metrics = getattr(model, f"{loss_fn}")(
                         torch.cat((x_c, x_t)), torch.cat((y_c, y_t))
                     )

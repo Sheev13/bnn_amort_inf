@@ -146,6 +146,7 @@ class ConvCNPDecoder(nn.Module):
         self.y_dim = y_dim
         self.embedded_dim = embedded_dim
         self.likelihood = likelihood
+        self.nonlinearity = nonlinearity
 
         # if cnn_chans[-1] != 2:
         #     cnn_chans.append(2)  # output channels for mu and sigma
@@ -185,7 +186,9 @@ class ConvCNPDecoder(nn.Module):
         x_grid: torch.Tensor,
         x_t: torch.Tensor,
     ) -> torch.distributions.Distribution:
-        z_c_proc = self.cnn(torch.sigmoid(z_c).unsqueeze(0)).squeeze(0).permute(1, 0)
+        z_c_proc = (
+            self.cnn(self.nonlinearity(z_c).unsqueeze(0)).squeeze(0).permute(1, 0)
+        )
 
         assert len(z_c_proc.shape) == 2
         assert z_c_proc.shape[1] == self.likelihood.out_dim_multiplier
@@ -230,6 +233,7 @@ class GridConvCNPDecoder(nn.Module):
         num_u_layers: int = 6,
         starting_chans: int = 16,
         pool: str = "max",
+        likelihood_string: Optional[str] = None,
     ):
         super().__init__()
 
@@ -237,6 +241,7 @@ class GridConvCNPDecoder(nn.Module):
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.likelihood = likelihood
+        self.likelihood_string = likelihood_string
 
         if unet:
             self.cnn = Unet(
@@ -272,7 +277,7 @@ class GridConvCNPDecoder(nn.Module):
     def forward(self, z_c: torch.Tensor) -> torch.distributions.Distribution:
         assert z_c.shape[0] == self.embedded_dim
         # TODO: this doesn't seem correct?
-        # assert len(z_c.shape) - 1 == self.x_dim
+        assert len(z_c.shape) - 1 == self.x_dim
         # E is shape (embedded_dim, *grid_shape)
         z_c = self.cnn(
             z_c
@@ -280,8 +285,11 @@ class GridConvCNPDecoder(nn.Module):
         z_c = self.mlp(z_c.permute(1, 2, 0)).permute(
             2, 0, 1
         )  # shape (y_dim * 2, *grid_shape)
-        if isinstance(self.likelihood, HeteroscedasticNormalLikelihood):
-            return self.likelihood(z_c.permute(1, 2, 0))
+        if (
+            isinstance(self.likelihood, HeteroscedasticNormalLikelihood)
+            or self.likelihood_string == "HeteroscedasticNormalLikelihood"
+        ):
+            return self.likelihood(z_c, dim=0)
         return self.likelihood(z_c)
 
 
@@ -357,7 +365,18 @@ class GridConvCNP(BaseNP):
         num_unet_layers: int = 6,
         unet_starting_chans: int = 16,
         pool: str = "max",
+        likelihood_string: Optional[
+            str
+        ] = None,  # only used to circumvent autoreload + isinstance() bug (look this up)
     ):
+
+        # only used to circumvent autoreload + isinstance() bug (look this up)
+        if likelihood_string is not None:
+            if likelihood_string == "HeteroscedasticNormalLikelihood":
+                likelihood = HeteroscedasticNormalLikelihood()
+            else:
+                raise NotImplementedError
+
         encoder = GridConvCNPEncoder(
             x_dim,  # should be 2 for an image
             y_dim,  # should be 3 for a colour image (rgb)
@@ -380,10 +399,12 @@ class GridConvCNP(BaseNP):
             num_u_layers=num_unet_layers,
             starting_chans=unet_starting_chans,
             pool=pool,
+            likelihood_string=likelihood_string,
         )
 
         super().__init__(x_dim, y_dim, embedded_dim, encoder, decoder)
         self.likelihood = likelihood
+        self.likelihood_string = likelihood_string
 
     def forward(
         self,

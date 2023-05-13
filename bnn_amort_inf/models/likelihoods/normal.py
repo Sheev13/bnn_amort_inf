@@ -27,8 +27,8 @@ class NormalLikelihood(Likelihood):
 class HeteroscedasticNormalLikelihood(Likelihood):
     out_dim_multiplier = 2
 
-    def forward(self, x: torch.Tensor) -> torch.distributions.Normal:
+    def forward(self, x: torch.Tensor, dim: int = -1) -> torch.distributions.Normal:
         assert x.shape[-1] % 2 == 0
 
-        loc, log_sigma = torch.chunk(x, chunks=2, dim=-1)
+        loc, log_sigma = torch.chunk(x, chunks=2, dim=dim)
         return torch.distributions.Normal(loc, log_sigma.exp())
