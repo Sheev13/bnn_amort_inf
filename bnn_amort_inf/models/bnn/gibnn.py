@@ -154,7 +154,7 @@ class AmortisedGIBNN(BaseBNN):
     ):
         super().__init__(x_dim, y_dim, hidden_dims, nonlinearity, likelihood)
 
-        dims = [x_dim] + hidden_dims + [y_dim]
+        dims = [x_dim] + hidden_dims + [y_dim * self.likelihood.out_dim_multiplier]
         if pws is None:
             pws = [None] * (len(dims) - 1)
         else:
@@ -280,7 +280,6 @@ class AmortisedGIBNN(BaseBNN):
         assert y_t.shape[-1] == self.y_dim
 
         F_t = self(x_c, y_c, x_test=x_t, num_samples=num_samples, compute_kl=False)[2]
-
         qy_t = self.likelihood(F_t)
         exp_ll = (
             qy_t.log_prob(y_t.unsqueeze(0).repeat(num_samples, 1, 1)).sum()

@@ -148,14 +148,8 @@ class ConvCNPDecoder(nn.Module):
         self.likelihood = likelihood
         self.nonlinearity = nonlinearity
 
-        # if cnn_chans[-1] != 2:
-        #     cnn_chans.append(2)  # output channels for mu and sigma
         if cnn_chans[-1] != self.likelihood.out_dim_multiplier:
-            cnn_chans.append(
-                self.likelihood.out_dim_multiplier
-            )  # Single output channel.
-        # if cnn_chans[-1] != 1:
-        #     cnn_chans.append(1)
+            cnn_chans.append(self.likelihood.out_dim_multiplier)
 
         cnn_chans = [embedded_dim] + cnn_chans
 
@@ -199,7 +193,7 @@ class ConvCNPDecoder(nn.Module):
             torch.cat(
                 [
                     self.set_convs[i](
-                        x_grid.unsqueeze(1), z_c_proc[:, i].unsqueeze(-1), x_t
+                        x_grid.unsqueeze(-1), z_c_proc[:, i].unsqueeze(-1), x_t
                     )
                     for i in range(self.likelihood.out_dim_multiplier)
                 ],
@@ -276,7 +270,6 @@ class GridConvCNPDecoder(nn.Module):
 
     def forward(self, z_c: torch.Tensor) -> torch.distributions.Distribution:
         assert z_c.shape[0] == self.embedded_dim
-        # TODO: this doesn't seem correct?
         assert len(z_c.shape) - 1 == self.x_dim
         # E is shape (embedded_dim, *grid_shape)
         z_c = self.cnn(
@@ -367,10 +360,12 @@ class GridConvCNP(BaseNP):
         pool: str = "max",
         likelihood_string: Optional[
             str
-        ] = None,  # only used to circumvent autoreload + isinstance() bug (look this up)
+        ] = None,  # only used to circumvent autoreload + isinstance() issue
     ):
 
-        # only used to circumvent autoreload + isinstance() bug (look this up)
+        # Following is used to circumvent autoreload + isinstance() issue.
+        # 'likelihood_string' should only be used instead of 'likelihood' if
+        # changes are being made to HeteroscedasticNormalLikelihood class.
         if likelihood_string is not None:
             if likelihood_string == "HeteroscedasticNormalLikelihood":
                 likelihood = HeteroscedasticNormalLikelihood()
