@@ -1,6 +1,8 @@
 from typing import Any, List, Tuple
 
+import numpy as np
 import torch
+from scipy.interpolate import griddata
 from torch.utils.data import Dataset
 
 
@@ -156,3 +158,37 @@ def samps_to_img_dist(preds: torch.Tensor, img_shape=(28, 28, 1)):
     pred_img = mean.reshape(img_shape)
     pred_std = std.reshape(img_shape)
     return pred_img.numpy(), pred_std.numpy()
+
+
+def linearly_interpolate(img: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+
+    # switch to numpy for scipy func later on
+    image = (img * mask).permute(1, 2, 0).numpy()
+    mask = mask.unsqueeze(-1).numpy()
+
+    # get indices, coords, and values of unmasked pixels
+    indices = np.argwhere(mask == 1.0)
+    x = indices[:, 1]
+    y = indices[:, 0]
+    values = image[y, x, :]
+
+    # get coords grid
+    nx, ny = image.shape[1], image.shape[0]
+    xx, yy = np.meshgrid(np.arange(nx), np.arange(ny))
+
+    # perform bilinear interpolation
+    interpolated_values = []
+    for i in range(image.shape[2]):
+        channel_values = values[:, i]
+        interpolated_channel = griddata(
+            (x, y), channel_values, (xx, yy), method="linear"
+        )
+        interpolated_values.append(interpolated_channel)
+
+    # back to torch
+    interpolated_image = np.stack(interpolated_values, axis=2)
+    interpolated_image = torch.from_numpy(
+        np.where(mask == 0.0, interpolated_image, image)
+    )
+
+    return interpolated_image
