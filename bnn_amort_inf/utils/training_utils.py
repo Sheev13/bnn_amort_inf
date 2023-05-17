@@ -22,11 +22,10 @@ def train_metamodel(
     min_es_iters: int = 1_000,
     ref_es_iters: int = 300,
     smooth_es_iters: int = 50,
-    es_thresh: float = 1e-2,
+    es_thresh: float = 5e-2,
     gridconv: bool = False,
     image: bool = False,
     binary_image: bool = False,
-    man_thresh: Optional[Tuple[str, float]] = None,
 ) -> Dict[str, List[Any]]:
     assert ref_es_iters < min_es_iters
     assert smooth_es_iters < min_es_iters
@@ -103,21 +102,17 @@ def train_metamodel(
         iter_tqdm.set_postfix(batch_metrics)
 
         # Early stopping.
-        if iter_idx > min_es_iters:
-            curr_loss = sum(tracker["loss"][-smooth_es_iters:]) / smooth_es_iters
-            ref_loss = (
-                sum(tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters])
-                / smooth_es_iters
-            )
-            if (
-                es
-                and ref_loss - curr_loss < abs(es_thresh * ref_loss)
-                and man_thresh is None
-            ):
-                break
-        if man_thresh is not None and es:
-            if batch_metrics[man_thresh[0]] > man_thresh[1]:
-                break
+        if es:
+            if iter_idx > min_es_iters:
+                curr_loss = sum(tracker["loss"][-smooth_es_iters:]) / smooth_es_iters
+                ref_loss = (
+                    sum(
+                        tracker["loss"][-ref_es_iters - smooth_es_iters : -ref_es_iters]
+                    )
+                    / smooth_es_iters
+                )
+                if abs(ref_loss - curr_loss) < abs(es_thresh * ref_loss):
+                    break
 
     return tracker
 

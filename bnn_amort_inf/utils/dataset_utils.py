@@ -81,6 +81,9 @@ def sawtooth_dataset(
 
 
 def random_mask(ratio: float, image: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    if isinstance(ratio, list) or isinstance(ratio, tuple):
+        assert len(ratio) == 2
+        ratio = np.random.uniform(low=ratio[0], high=ratio[1])
     dims = image.shape[-2:]
     mask = (torch.Tensor(dims).uniform_() < ratio).double()
     return image * mask, mask
