@@ -22,7 +22,7 @@ def train_metamodel(
     min_es_iters: int = 1_000,
     ref_es_iters: int = 300,
     smooth_es_iters: int = 50,
-    es_thresh: float = 5e-2,
+    es_thresh: float = 1e-2,
     gridconv: bool = False,
     image: bool = False,
     binary_image: bool = False,
