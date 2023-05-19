@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import torch
 from torch import nn
@@ -124,6 +124,7 @@ class Unet(nn.Module):
         conv: nn.Module = nn.Conv2d,
         pool: str = "max",
         nonlinearity: nn.Module = nn.ReLU(),
+        out_chans: Optional[int] = None,
     ):
         super().__init__()
 
@@ -151,6 +152,12 @@ class Unet(nn.Module):
             nonlinearity,
         )
 
+        self.out_block = nn.Identity()
+        if out_chans is not None:
+            self.out_block = ConvBlock(
+                starting_chans, out_chans, conv, kernel_size, nonlinearity
+            )
+
         self.u_blocks = []
         for i in range(self.num_u_blocks):
             double = int(i > self.num_u_blocks // 2)
@@ -163,6 +170,8 @@ class Unet(nn.Module):
                     nonlinearity,
                 )
             )
+
+        self.dim = dim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.in_block(x)
@@ -177,21 +186,28 @@ class Unet(nn.Module):
 
         # Bottleneck
         x = self.u_blocks[half_u_blocks](x)
+        if self.dim > 1:
+            x = x.unsqueeze(0)
 
         # Up
         for i in range((half_u_blocks) + 1, self.num_u_blocks):
             x = F.interpolate(
-                x.unsqueeze(0),
+                x,
                 mode=self.upsamp_mode,
-                scale_factor=2,
                 align_corners=True,
-            ).squeeze(0)
+                size=(residuals[half_u_blocks - i].shape[2:]),
+            )
+            if self.dim > 1:
+                x = x.squeeze(0)
+                dim = 0
+            else:
+                dim = 1
             x = torch.cat(
-                (x, residuals[half_u_blocks - i]), dim=0
+                (x, residuals[half_u_blocks - i]), dim=dim
             )  # concat on channels
             x = self.u_blocks[i](x)
 
-        return x
+        return self.out_block(x)
 
 
 class SetConv(nn.Module):

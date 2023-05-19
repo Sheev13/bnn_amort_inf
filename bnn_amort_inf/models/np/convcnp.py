@@ -134,12 +134,14 @@ class ConvCNPDecoder(nn.Module):
         cnn_chans: List[int],
         embedded_dim: int,
         kernel_size: int,
-        conv: nn.Module = nn.Conv1d,
         nonlinearity: nn.Module = nn.ReLU(),
-        normalisation: nn.Module = nn.Identity,  # nn.BatchNorm1d
         lengthscale: float = 0.01,
         likelihood: Likelihood = NormalLikelihood(noise=0.1),
-        **conv_layer_kwargs,
+        res: bool = False,
+        unet: bool = False,
+        num_unet_layers: int = 6,
+        unet_starting_chans: int = 16,
+        pool: str = "max",
     ):
         super().__init__()
         self.x_dim = x_dim
@@ -151,16 +153,32 @@ class ConvCNPDecoder(nn.Module):
         if cnn_chans[-1] != self.likelihood.out_dim_multiplier:
             cnn_chans.append(self.likelihood.out_dim_multiplier)
 
-        cnn_chans = [embedded_dim] + cnn_chans
+        if unet:
+            self.cnn = Unet(
+                embedded_dim,
+                num_unet_layers,
+                unet_starting_chans,
+                kernel_size,
+                nn.Conv1d,
+                pool,
+                nonlinearity,
+                out_chans=2,
+            )
+        else:
+            cnn_chans = [embedded_dim] + cnn_chans
+            self.cnn = CNN(
+                cnn_chans,
+                kernel_size,
+                nn.Conv1d,
+                nonlinearity,
+                res,
+            )
 
-        self.cnn = CNN(
-            cnn_chans,
-            kernel_size,
-            conv,
-            nonlinearity,
-            normalisation,
-            **conv_layer_kwargs,
-        )
+        # if unet:
+        #     in_dim = unet_starting_chans
+        # else:
+        #     in_dim = cnn_chans[-1]
+
         self.set_convs = [
             SetConv(1, y_dim, train_lengthscale=True, lengthscale=lengthscale)
             for _ in range(self.likelihood.out_dim_multiplier)
@@ -276,13 +294,16 @@ class ConvCNP(BaseNP):
         embedded_dim: int = 64,
         likelihood: Likelihood = NormalLikelihood(noise=0.1),
         cnn_chans: List[int] = [32, 32],
-        conv: nn.Module = nn.Conv1d,
         kernel_size: int = 9,
         granularity: int = 64,  # discretized points per unit
         encoder_lengthscale: Optional[float] = None,
         decoder_lengthscale: Optional[float] = None,
         nonlinearity: nn.Module = nn.ReLU(),
-        **conv_layer_kwargs,
+        res: bool = False,
+        unet: bool = False,
+        num_unet_layers: int = 6,
+        unet_starting_chans: int = 16,
+        pool: str = "max",
     ):
         if encoder_lengthscale is None:
             encoder_lengthscale = 10 / granularity
@@ -304,12 +325,14 @@ class ConvCNP(BaseNP):
             cnn_chans,
             embedded_dim,
             kernel_size,
-            conv=conv,
             nonlinearity=nonlinearity,
-            normalisation=nn.Identity,
             lengthscale=decoder_lengthscale,
             likelihood=likelihood,
-            **conv_layer_kwargs,
+            res=res,
+            unet=unet,
+            num_unet_layers=num_unet_layers,
+            unet_starting_chans=unet_starting_chans,
+            pool=pool,
         )
 
         super().__init__(x_dim, y_dim, embedded_dim, encoder, decoder)
