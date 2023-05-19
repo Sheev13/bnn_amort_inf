@@ -5,6 +5,8 @@ import torch
 from scipy.interpolate import griddata
 from torch.utils.data import Dataset
 
+import bnn_amort_inf
+
 
 class MetaDataset(Dataset):
     def __init__(self, datasets: List[Any]):
@@ -195,3 +197,19 @@ def linearly_interpolate(img: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     )
 
     return interpolated_image
+
+
+def gen_datasets(
+    num_datasets: int = 10,
+    kernel: str = "se",
+    x_min: float = -2.0,
+    x_max: float = 2.0,
+    n_min: int = 10,
+    n_max: int = 10,
+):
+    return [
+        bnn_amort_inf.utils.gp_datasets.gp_dataset_generator(
+            kernel=kernel, x_min=x_min, x_max=x_max, min_n=n_min, max_n=n_max
+        )
+        for _ in range(num_datasets)
+    ]

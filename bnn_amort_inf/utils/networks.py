@@ -186,16 +186,16 @@ class Unet(nn.Module):
 
         # Bottleneck
         x = self.u_blocks[half_u_blocks](x)
-        if self.dim > 1:
-            x = x.unsqueeze(0)
 
         # Up
         for i in range((half_u_blocks) + 1, self.num_u_blocks):
+            if self.dim > 1:
+                x = x.unsqueeze(0)
             x = F.interpolate(
                 x,
                 mode=self.upsamp_mode,
                 align_corners=True,
-                size=(residuals[half_u_blocks - i].shape[2:]),
+                size=(residuals[half_u_blocks - i].shape[-self.dim :]),
             )
             if self.dim > 1:
                 x = x.squeeze(0)
