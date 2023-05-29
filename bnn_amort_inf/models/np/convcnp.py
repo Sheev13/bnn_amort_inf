@@ -222,6 +222,8 @@ class GridConvCNPDecoder(nn.Module):
         cnn_chans: List[int] = [128, 128, 128],
         embedded_dim: int = 128,
         cnn_kernel_size: int = 3,
+        mlp: bool = True,
+        mlp_width: int = 128,
         conv: nn.Module = nn.Conv2d,
         nonlinearity: nn.Module = nn.ReLU(),
         likelihood: Likelihood = NormalLikelihood(noise=0.1),
@@ -237,6 +239,12 @@ class GridConvCNPDecoder(nn.Module):
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.likelihood = likelihood
+        self.mlp = mlp
+
+        out_chans = None
+        if not mlp:
+            out_chans = self.likelihood.out_dim_multiplier * y_dim
+            cnn_chans.append(out_chans)
 
         if unet:
             self.cnn = Unet(
@@ -247,6 +255,7 @@ class GridConvCNPDecoder(nn.Module):
                 conv,
                 pool,
                 nonlinearity,
+                out_chans=out_chans,
             )
         else:
             cnn_chans = [embedded_dim] + cnn_chans
@@ -259,15 +268,16 @@ class GridConvCNPDecoder(nn.Module):
                 res,
             )
 
-        if unet:
-            in_dim = starting_chans
-        else:
-            in_dim = cnn_chans[-1]
+        if mlp:
+            if unet:
+                in_dim = starting_chans
+            else:
+                in_dim = cnn_chans[-1]
 
-        self.mlp = MLP(
-            [in_dim] + [128] + [self.likelihood.out_dim_multiplier * y_dim],
-            nonlinearity=nonlinearity,
-        )
+            self.mlp = MLP(
+                [in_dim] + [mlp_width] + [self.likelihood.out_dim_multiplier * y_dim],
+                nonlinearity=nonlinearity,
+            )
 
     def forward(self, z_c: torch.Tensor) -> torch.distributions.Distribution:
         assert z_c.shape[0] == self.embedded_dim
@@ -276,9 +286,10 @@ class GridConvCNPDecoder(nn.Module):
         z_c = self.cnn(
             z_c
         )  # shape (cnn_chans[-1], *grid_shape). if unet, cnn_chans[-1] == starting_chans
-        z_c = self.mlp(z_c.permute(1, 2, 0)).permute(
-            2, 0, 1
-        )  # shape (y_dim * 2, *grid_shape)
+        if self.mlp:
+            z_c = self.mlp(z_c.permute(1, 2, 0)).permute(
+                2, 0, 1
+            )  # shape (y_dim * 2, *grid_shape)
         if isinstance(self.likelihood, HeteroscedasticNormalLikelihood):
             return self.likelihood(z_c, dim=0)
         return self.likelihood(z_c)
@@ -356,6 +367,8 @@ class GridConvCNP(BaseNP):
         conv: nn.Module = nn.Conv2d,
         cnn_kernel_size: int = 3,
         conv_kernel_size: int = 3,
+        mlp: bool = True,
+        mlp_width: int = 128,
         res: bool = False,
         unet: bool = False,
         num_unet_layers: int = 6,
@@ -377,6 +390,8 @@ class GridConvCNP(BaseNP):
             cnn_chans=cnn_chans,
             embedded_dim=embedded_dim,
             cnn_kernel_size=cnn_kernel_size,
+            mlp=mlp,
+            mlp_width=mlp_width,
             conv=conv,
             nonlinearity=nn.ReLU(),
             likelihood=likelihood,
