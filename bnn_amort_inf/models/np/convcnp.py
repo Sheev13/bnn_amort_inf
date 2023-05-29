@@ -64,7 +64,7 @@ class ConvCNPEncoder(nn.Module):
         x_min = min(torch.min(x_c), torch.min(x_t)) - 0.1
         x_max = max(torch.max(x_c), torch.max(x_t)) + 0.1
         num_points = int((x_max - x_min) * self.granularity)
-        x_grid = torch.linspace(x_min, x_max, num_points)
+        x_grid = torch.linspace(x_min, x_max, num_points).unsqueeze(-1)
 
         F_c = self.set_conv(x_c, y_c, x_grid).permute(1, 0)
 
@@ -162,7 +162,7 @@ class ConvCNPDecoder(nn.Module):
                 nn.Conv1d,
                 pool,
                 nonlinearity,
-                out_chans=2,
+                out_chans=self.likelihood.out_dim_multiplier,
             )
         else:
             cnn_chans = [embedded_dim] + cnn_chans
@@ -202,9 +202,7 @@ class ConvCNPDecoder(nn.Module):
         return self.likelihood(
             torch.cat(
                 [
-                    self.set_convs[i](
-                        x_grid.unsqueeze(-1), z_c_proc[:, i].unsqueeze(-1), x_t
-                    )
+                    self.set_convs[i](x_grid, z_c_proc[:, i].unsqueeze(-1), x_t)
                     for i in range(self.likelihood.out_dim_multiplier)
                 ],
                 dim=-1,

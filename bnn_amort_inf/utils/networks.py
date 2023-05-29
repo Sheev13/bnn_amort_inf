@@ -220,9 +220,9 @@ class SetConv(nn.Module):
     ):
         super().__init__()
         self.in_dim = in_dim
-        self.out_dim = out_dim
-        self.in_chan = in_dim + out_dim
-        self.resizer = nn.Sequential(nn.Linear(self.in_chan, self.out_dim))
+        self.out_chan = out_dim
+        self.in_chan = in_dim + 1
+        self.resizer = nn.Sequential(nn.Linear(self.in_chan, self.out_chan))
         self.log_sigma = nn.Parameter(
             torch.tensor(lengthscale).log() * torch.ones(self.in_chan),
             requires_grad=train_lengthscale,
@@ -235,23 +235,20 @@ class SetConv(nn.Module):
     def rbf(self, dists):
         return (-0.5 * dists.unsqueeze(-1) / self.sigma**2).exp()
 
-    def forward(self, x_c, y_c, x_grid):
-        assert x_c.shape[1] == self.in_dim
-        if len(x_grid.shape) == 1:
-            x_grid = x_grid.unsqueeze(1)
+    def forward(self, x_c, y_c, x_t):
+        if len(x_t.shape) == 1:
+            x_t = x_t.unsqueeze(1)
 
-        dists = torch.cdist(x_c, x_grid, p=2).squeeze(1)  # shape (num_c, num_grid)
+        dists = torch.cdist(x_c, x_t, p=2).squeeze(1)  # shape (num_c, num_grid)
         w = self.rbf(dists)  # shape (num_c, num_grid, in_chan)
         density = torch.ones_like(x_c)
 
-        F = torch.cat(
-            [density, y_c.repeat(1, self.out_dim)], dim=-1
-        )  # shape (num_c, in_chan)     repeat here is new
+        F = torch.cat([density, y_c], dim=-1)  # shape (num_c, in_chan)
         F = F.unsqueeze(1) * w  # shape (num_c, num_grid, in_chan)
         F = F.sum(0)  # shape (num_grid, in_chan)
 
         # normalise convolution using density channel
-        density, conv = F[..., : self.in_dim], F[..., self.in_dim :]
+        density, conv = F[:, : self.in_dim], F[:, self.in_dim :]
         norm_conv = conv / (density + 1e-8)
         F = torch.cat([density, norm_conv], dim=-1)
 
