@@ -43,7 +43,7 @@ class ConvCNPEncoder(nn.Module):
         self.set_conv = SetConv(
             x_dim,
             embedded_dim,
-            train_lengthscale=True,
+            train_lengthscale=False,
             lengthscale=lengthscale,
         )
 
@@ -180,7 +180,7 @@ class ConvCNPDecoder(nn.Module):
         #     in_dim = cnn_chans[-1]
 
         self.set_convs = [
-            SetConv(1, y_dim, train_lengthscale=True, lengthscale=lengthscale)
+            SetConv(1, y_dim, train_lengthscale=False, lengthscale=lengthscale)
             for _ in range(self.likelihood.out_dim_multiplier)
         ]
 
