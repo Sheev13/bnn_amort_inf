@@ -213,3 +213,17 @@ def gen_datasets(
         )
         for _ in range(num_datasets)
     ]
+
+
+def pixelwise_sq_error(im1, im2, mean=False):
+    flat_im1 = torch.flatten(im1)
+    flat_im2 = torch.flatten(im2)
+    error = torch.tensor(0.0)
+    for i in range(len(flat_im1)):
+        if torch.isnan(flat_im1[i]) or torch.isnan(flat_im2[i]):
+            error += 1.0
+        else:
+            error += (flat_im1[i] - flat_im2[i]) ** 2
+    if mean:
+        error = error / torch.flatten(im1).size(0)
+    return error
