@@ -1,6 +1,6 @@
 # Amortised Inference in Bayesian Neural Networks
 
-This repository contains the codebase for my Master's project of the above title.
+This repository contains the codebase for my Master's project of the above title. Thesis available [here](https://arxiv.org/abs/2309.03018). A paper based on the project was accepted at the AABI workshop held at ICML 2023; the manuscript can be found [here](https://openreview.net/forum?id=0HE8ePmffq).
 
 ### Abstract
 
